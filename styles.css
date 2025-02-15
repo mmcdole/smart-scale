@@ -1,0 +1,44 @@
+.card {
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+#current-weight {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #007bff;
+}
+
+.table-responsive {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.alert {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+.confidence-high {
+    color: #28a745;
+}
+
+.confidence-medium {
+    color: #ffc107;
+}
+
+.confidence-low {
+    color: #dc3545;
+}
+
+#current-order {
+    min-height: 100px;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+}
+
+.btn {
+    width: 100%;
+    margin-bottom: 0.5rem;
+}
