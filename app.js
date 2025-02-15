@@ -278,22 +278,6 @@ class OrderSimulator {
         // Step 10: Update product confidence
         product.confidence = confidence;
     }
-
-    updateProductTable() {
-        const tableBody = document.querySelector('#product-table tbody');
-        tableBody.innerHTML = Object.values(this.products).map(product => {
-            const [min, max] = product.trueRange;
-            const confidence = product.observations > 0 ? (product.confidence * 100).toFixed(1) : '0.0';
-            return `
-                <tr>
-                    <td>${product.name}</td>
-                    <td>${min}-${max}</td>
-                    <td>${product.estimatedWeight ? product.estimatedWeight.toFixed(1) : '0.0'}</td>
-                    <td>${confidence}% (${product.observations} orders)</td>
-                </tr>
-            `;
-        }).join('');
-    }
 }
 
 // UI Controller
@@ -506,8 +490,26 @@ class UIController {
         tableBody.innerHTML = Object.values(this.simulator.products).map(product => {
             const [min, max] = product.trueRange;
             const confidence = product.observations > 0 ? (product.confidence * 100).toFixed(1) : '0.0';
+            
+            // Calculate color based on confidence
+            let bgColor;
+            const confidenceNum = parseFloat(confidence);
+            if (confidenceNum === 0) {
+                bgColor = '#ffebee'; // Start with light red for no observations
+            } else if (confidenceNum < 60) {
+                bgColor = '#ffebee'; // Light red
+            } else if (confidenceNum < 70) {
+                bgColor = '#fff3e0'; // Light orange
+            } else if (confidenceNum < 80) {
+                bgColor = '#fff8e1'; // Light yellow
+            } else if (confidenceNum < 90) {
+                bgColor = '#f1f8e9'; // Light green-yellow
+            } else {
+                bgColor = '#e8f5e9'; // Light green
+            }
+
             return `
-                <tr>
+                <tr style="background-color: ${bgColor}">
                     <td>${product.name}</td>
                     <td>${min}-${max}</td>
                     <td>${product.estimatedWeight ? product.estimatedWeight.toFixed(1) : '0.0'}</td>
