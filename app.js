@@ -29,7 +29,94 @@ const products = [
     { name: 'Triple Layer Nachos', trueRange: [185, 205] }
 ];
 
-// Gaussian Utilities
+// Separate simulation data from learning data
+const productRanges = new Map(products.map(p => [p.name, p.trueRange]));
+
+// Core statistical utilities using Welford's algorithm
+class WelfordStats {
+    constructor() {
+        this.n = 0;
+        this.mean = 0;
+        this.M2 = 0;
+    }
+
+    update(newValue) {
+        // Guard against NaN inputs
+        if (isNaN(newValue)) return;
+        
+        this.n++;
+        const delta = newValue - this.mean;
+        this.mean += delta / this.n;
+        const delta2 = newValue - this.mean;
+        this.M2 += delta * delta2;
+    }
+
+    get variance() {
+        if (this.n < 2) return 0;
+        const variance = this.M2 / (this.n - 1);
+        return isNaN(variance) ? 0 : variance;
+    }
+
+    get std() {
+        return Math.sqrt(this.variance);
+    }
+
+    get rsd() {
+        if (this.mean === 0 || this.n === 0) return 0;
+        const rsd = (this.std / Math.abs(this.mean)) * 100;
+        return isNaN(rsd) ? 0 : rsd;
+    }
+}
+
+// Product class to manage individual product statistics
+class Product {
+    constructor(name) {
+        this.name = name;
+        this.stats = new WelfordStats();
+        this.defaultWeight = 200;
+        this.recentObservations = []; // Track recent measurements
+        this.maxRecentHistory = 10;   // Keep last 10 measurements
+    }
+
+    get estimatedWeight() {
+        const weight = this.stats.n === 0 ? this.defaultWeight : this.stats.mean;
+        return isNaN(weight) ? this.defaultWeight : weight;
+    }
+
+    get observations() {
+        return this.stats.n;
+    }
+
+    get rsd() {
+        return this.stats.rsd;
+    }
+
+    get status() {
+        // Learning: Fewer than 5 observations
+        if (this.observations < 5) return 'Learning';
+
+        // Medium: At least 5 observations but RSD ≥ 10%
+        if (this.rsd >= 10) return 'Medium';
+
+        // High: At least 5 observations with RSD < 10%
+        return 'High';
+    }
+
+    update(weight, learningRate = 1.0) {
+        // Basic input validation is still good practice
+        if (weight <= 0 || learningRate < 0 || learningRate > 1) return;
+
+        this.recentObservations.push(weight);
+        if (this.recentObservations.length > this.maxRecentHistory) {
+            this.recentObservations.shift();
+        }
+
+        const effectiveWeight = learningRate * weight + (1 - learningRate) * this.estimatedWeight;
+        this.stats.update(effectiveWeight);
+    }
+}
+
+// Gaussian random number generator
 const GaussianUtils = {
     randomGaussian(mean, stdDev) {
         const u1 = Math.random();
@@ -39,244 +126,134 @@ const GaussianUtils = {
     }
 };
 
-// Order Simulation
+// Order simulator class
 class OrderSimulator {
     constructor() {
-        // Initialize products with estimated weights
-        this.products = {};
-        
-        // Convert products array into a map with additional tracking fields
-        products.forEach(product => {
-            this.products[product.name] = {
-                ...product,
-                estimatedWeight: 0,    // Start with no assumption
-                confidence: 0,         // Start with zero confidence
-                observations: 0,
-                weightHistory: [],
-                errorHistory: []
-            };
-        });
-    }
-
-    getProducts() {
-        return this.products;
+        // Only pass the name to Product - keep true ranges separate
+        this.products = new Map(products.map(p => [
+            p.name, 
+            new Product(p.name)
+        ]));
     }
 
     generateOrder(incomplete = false) {
-        // Generate a random order of 2-4 items for incomplete orders, 1-4 for complete orders
         const minItems = incomplete ? 2 : 1;
-        const numItems = Math.floor(Math.random() * (4 - minItems + 1)) + minItems;
-        const products = Object.keys(this.products);
-        const order = [];
+        const maxItems = 3; // Per spec: 1-3 items
+        const numItems = Math.floor(Math.random() * (maxItems - minItems + 1)) + minItems;
         
         // Select random items
-        for (let i = 0; i < numItems; i++) {
-            const randomProduct = products[Math.floor(Math.random() * products.length)];
-            order.push({
-                name: randomProduct,
-                present: true,
-                trueWeight: this.generateItemWeight(randomProduct)
-            });
+        const productNames = Array.from(this.products.keys());
+        const selectedItems = new Set();
+        while (selectedItems.size < numItems) {
+            const randomProduct = productNames[Math.floor(Math.random() * productNames.length)];
+            selectedItems.add(randomProduct);
         }
-        
-        // For incomplete orders, ensure at least one item is missing
+
+        // Create order items
+        const order = Array.from(selectedItems).map(name => ({
+            name,
+            present: true,
+            trueWeight: this.generateItemWeight(name)
+        }));
+
+        // Handle incomplete orders
         if (incomplete && order.length > 1) {
-            // Randomly select one item to definitely keep
-            const keepIndex = Math.floor(Math.random() * order.length);
-            
-            // Randomly select one item to definitely make missing
-            let missingIndex;
-            do {
-                missingIndex = Math.floor(Math.random() * order.length);
-            } while (missingIndex === keepIndex);
-            
-            // Mark the chosen item as missing
+            const missingIndex = Math.floor(Math.random() * order.length);
             order[missingIndex].present = false;
             order[missingIndex].trueWeight = 0;
-            
-            // For remaining items, randomly mark some as missing
-            for (let i = 0; i < order.length; i++) {
-                if (i !== keepIndex && i !== missingIndex && Math.random() < 0.3) {
-                    order[i].present = false;
-                    order[i].trueWeight = 0;
-                }
-            }
         }
-        
-        // Calculate total weight of present items only
-        const totalWeight = order.reduce((sum, item) => {
-            return sum + (item.present ? item.trueWeight : 0);
-        }, 0);
-        
+
         return {
             items: order,
-            totalWeight: totalWeight
+            totalWeight: order.reduce((sum, item) => sum + (item.present ? item.trueWeight : 0), 0)
         };
     }
-    
+
     generateItemWeight(productName) {
-        const product = this.products[productName];
-        const [min, max] = product.trueRange;
+        const trueRange = productRanges.get(productName);
+        const [min, max] = trueRange;
         const mean = (min + max) / 2;
-        const stdDev = (max - min) / 6; // Assumes 99.7% of weights fall within range
+        const stdDev = (max - min) / 6; // 99.7% of weights within range
         return GaussianUtils.randomGaussian(mean, stdDev);
     }
-    
-    measureWeight(trueWeight) {
-        // Add small random measurement error
-        const error = GaussianUtils.randomGaussian(0, 2); // 2g standard deviation
-        return Math.max(0, trueWeight + error);
-    }
-    
-    inferOrderWeight(order) {
-        // Calculate total expected weight for ALL items, including missing ones
-        let totalEstimatedWeight = 0;
-        
-        // Calculate total expected weight
-        order.forEach(item => {
-            const product = this.products[item.name];
-            
-            if (product.observations > 0) {
-                // Use learned weight for known items
-                totalEstimatedWeight += product.estimatedWeight;
-            } else {
-                // For unknown items, always use true range midpoint
-                const [min, max] = product.trueRange;
-                totalEstimatedWeight += (min + max) / 2;
-            }
-        });
-        
-        return totalEstimatedWeight;
-    }
-    
-    updateWeightEstimates(order, measuredWeight) {
-        if (!order || order.length === 0) return;
 
-        // Only update weights for present items
-        const presentItems = order.filter(item => item.present);
+    measureWeight(trueWeight) {
+        const measurementNoise = GaussianUtils.randomGaussian(0, 2); // 2g std dev per spec
+        return Math.max(0, trueWeight + measurementNoise);
+    }
+
+    inferOrderWeight(order) {
+        // Calculate total expected weight and variance for the order
+        let totalWeight = 0;
+        let totalVariance = 0;
+
+        // Include ALL items in inferred weight, regardless of present status
+        order.items.forEach(item => {
+            const product = this.products.get(item.name);
+            totalWeight += product.estimatedWeight;
+            totalVariance += product.stats.variance;
+        });
+
+        return {
+            weight: totalWeight,
+            std: Math.sqrt(totalVariance)
+        };
+    }
+
+    analyzeOrderDifference(measuredWeight, inferredWeight) {
+        const {weight, std} = inferredWeight;
+        const difference = Math.abs(measuredWeight - weight);
+        
+        // Use sigma-based thresholds per spec
+        if (difference <= std) return 'Verified';
+        if (difference <= 2 * std) return 'Warning';
+        return 'Flagged';
+    }
+
+    updateWeightEstimates(order, measuredWeight) {
+        const presentItems = order.items.filter(item => item.present);
         if (presentItems.length === 0) return;
 
-        // If we only have one item, we can directly learn its weight
+        // For single-item orders, update directly at full rate.
         if (presentItems.length === 1) {
-            const product = this.products[presentItems[0].name];
-            this.updateProductWeight(product, measuredWeight, true);
+            const product = this.products.get(presentItems[0].name);
+            product.update(measuredWeight, 1.0);
             return;
         }
 
-        // For multiple items, distribute weight based on current estimates
-        const totalEstimatedWeight = presentItems.reduce((sum, item) => {
-            const product = this.products[item.name];
-            // Start with reasonable default if no estimate (average QSR item ~200g)
-            return sum + (product.estimatedWeight || 200);
-        }, 0);
-
+        // For multi-item orders, compute total estimated weight.
+        let totalEstimated = 0;
         presentItems.forEach(item => {
-            const product = this.products[item.name];
-            const currentEstimate = product.estimatedWeight || 200;
-            const weightRatio = currentEstimate / totalEstimatedWeight;
-            const estimatedItemWeight = measuredWeight * weightRatio;
-            
-            // Apply a weighted update based on order complexity
-            const orderComplexityFactor = 1 / presentItems.length;
-            this.updateProductWeight(product, estimatedItemWeight, false, orderComplexityFactor);
+            const product = this.products.get(item.name);
+            totalEstimated += product.estimatedWeight;
         });
-    }
-
-    updateProductWeight(product, measuredWeight, isSingleItem = false, orderComplexityFactor = 1) {
-        // Initialize with first measurement
-        if (product.observations === 0) {
-            product.estimatedWeight = measuredWeight;
-            product.weightHistory = [measuredWeight];
-            product.errorHistory = [0];
-            product.observations = 1;
-            this.updateConfidence(product);
-            return;
-        }
-
-        // Update weight history
-        product.weightHistory.push(measuredWeight);
-        if (product.weightHistory.length > 10) {
-            product.weightHistory.shift();
-        }
-
-        // Calculate relative error before update
-        const currentError = Math.abs(measuredWeight - product.estimatedWeight) / product.estimatedWeight;
-        product.errorHistory.push(currentError);
-        if (product.errorHistory.length > 10) {
-            product.errorHistory.shift();
-        }
-
-        // Adaptive learning rate based on multiple factors
-        const baseRate = 0.2; // Increased base learning rate
-        const confidenceFactor = 1 - (product.confidence * 0.5); // Lower confidence = higher learning rate
-        const singleItemBonus = isSingleItem ? 0.3 : 0; // Bonus for single-item orders
         
-        // Calculate final learning rate
-        const learningRate = Math.min(0.8, baseRate + confidenceFactor + singleItemBonus) * orderComplexityFactor;
+        // Compute error and distribute it proportionally.
+        const totalError = measuredWeight - totalEstimated;
 
-        // Update weight estimate using exponential moving average
-        product.estimatedWeight = (1 - learningRate) * product.estimatedWeight + learningRate * measuredWeight;
-        product.observations++;
-        this.updateConfidence(product);
-    }
+        // Update each product.
+        presentItems.forEach(item => {
+            const product = this.products.get(item.name);
+            
+            // Distribute error proportionally to current estimates
+            const ratio = product.estimatedWeight / totalEstimated;
+            const target = product.estimatedWeight + (totalError * ratio);
+            
+            let learningRate;
+            if (product.observations < 5) {
+                // Learning phase: full rate
+                learningRate = 1.0;
+            } else if (product.observations < 20) {
+                // Early phase: high rate
+                learningRate = 0.8;
+            } else {
+                // Established phase: moderate rate with minimum
+                learningRate = 0.2;  // Never drop below 0.2
+            }
 
-    updateConfidence(product) {
-        // Step 1: Handle initial cases
-        if (product.observations === 0) {
-            product.confidence = 0;
-            return;
-        }
-
-        // Step 2: Build up initial confidence gradually
-        if (product.observations < 5) {
-            product.confidence = Math.min(0.5, product.observations * 0.1);
-            return;
-        }
-
-        // Step 3: Calculate error metrics
-        const recentErrors = product.errorHistory.slice(-5);
-        const avgRecentError = recentErrors.reduce((sum, err) => sum + err, 0) / recentErrors.length;
-
-        // Step 4: Calculate stability metrics
-        const recentWeights = product.weightHistory.slice(-5);
-        const avgWeight = recentWeights.reduce((sum, w) => sum + w, 0) / recentWeights.length;
-        const weightVariability = recentWeights.reduce((sum, w) => 
-            sum + Math.pow(w - avgWeight, 2), 0) / recentWeights.length;
-        const normalizedVariability = Math.sqrt(weightVariability) / avgWeight;
-
-        // Step 5: Calculate base confidence more conservatively
-        let confidence = product.confidence; // Start with current confidence
-
-        // Step 6: Adjust confidence based on new data
-        const maxAdjustment = 0.1; // Maximum 10% change per update
-        
-        // Increase confidence if measurements are good
-        if (avgRecentError < 0.1 && normalizedVariability < 0.1) {
-            confidence += maxAdjustment * (1 - confidence); // Slower increase as we get more confident
-        }
-        // Decrease confidence if measurements are poor
-        else if (avgRecentError > 0.2 || normalizedVariability > 0.2) {
-            confidence -= maxAdjustment;
-        }
-
-        // Step 7: Apply confidence limits based on observations
-        const maxConfidenceByObservations = Math.min(0.99, 0.5 + (product.observations * 0.02));
-        confidence = Math.min(confidence, maxConfidenceByObservations);
-
-        // Step 8: Apply hard limits based on recent performance
-        if (avgRecentError > 0.3) { // > 30% error
-            confidence = Math.min(confidence, 0.6);
-        } else if (avgRecentError > 0.2) { // > 20% error
-            confidence = Math.min(confidence, 0.8);
-        } else if (avgRecentError > 0.1) { // > 10% error
-            confidence = Math.min(confidence, 0.9);
-        }
-
-        // Step 9: Ensure confidence stays within bounds
-        confidence = Math.max(0.5, Math.min(0.99, confidence));
-
-        // Step 10: Update product confidence
-        product.confidence = confidence;
+            // Update with the target weight and learning rate
+            product.update(target, learningRate);
+        });
     }
 }
 
@@ -296,26 +273,18 @@ class UIController {
         const updateSliderValue = (sliderId) => {
             const slider = document.getElementById(sliderId);
             const valueDisplay = document.getElementById(`${sliderId}-value`);
-            valueDisplay.textContent = `${slider.value}%`;
+            valueDisplay.textContent = `${slider.value}\u03C3`; // Unicode for sigma
         };
 
-        // Weight threshold slider
-        document.getElementById('weight-threshold').addEventListener('input', (e) => {
-            this.weightThreshold = parseInt(e.target.value);
-            updateSliderValue('weight-threshold');
-            this.displayCurrentOrder();
-        });
-
-        // Verified threshold slider
-        document.getElementById('verified-threshold').addEventListener('input', (e) => {
-            this.verifiedThreshold = parseInt(e.target.value);
-            updateSliderValue('verified-threshold');
+        // Detection threshold slider
+        document.getElementById('detection-threshold').addEventListener('input', (e) => {
+            this.weightThreshold = parseFloat(e.target.value);
+            updateSliderValue('detection-threshold');
             this.displayCurrentOrder();
         });
 
         // Initialize value displays
-        updateSliderValue('weight-threshold');
-        updateSliderValue('verified-threshold');
+        updateSliderValue('detection-threshold');
     }
 
     displayCurrentOrder() {
@@ -327,67 +296,74 @@ class UIController {
 
         const { order, measuredWeight, inferredWeight } = this.currentOrder;
         
-        // Calculate weight difference percentage
-        const weightDiff = Math.abs(measuredWeight - inferredWeight);
-        const largerWeight = Math.max(measuredWeight, inferredWeight);
-        const weightDiffPercent = (weightDiff / largerWeight) * 100;
-        const threshold = parseFloat(document.getElementById('weight-threshold').value);
+        // Calculate weight difference in terms of sigma
+        const { weight, std } = inferredWeight;
+        const weightDiff = Math.abs(measuredWeight - weight);
+        const sigmaValue = std > 0 ? weightDiff / std : 0;
         
-        // Count items by confidence level
-        const confidenceLevels = order.reduce((acc, item) => {
-            if (!item.present) return acc;
-            const product = this.simulator.products[item.name];
-            const confidence = product.confidence * 100;
-            if (confidence < this.verifiedThreshold) acc.learning++;
-            else acc.verified++;
-            return acc;
-        }, { learning: 0, verified: 0 });
+        // Update sigma difference display
+        document.getElementById('sigma-difference').textContent = sigmaValue.toFixed(1);
         
-        // Determine order status
+        // Use sigma threshold instead of percentage
+        const threshold = parseFloat(document.getElementById('detection-threshold').value);
+        
+        // Get status for each item
+        const itemStatuses = order.map(item => {
+            if (!item.present) return { status: 'Missing', class: 'text-danger' };
+            
+            const product = this.simulator.products.get(item.name);
+            if (product.observations < 5) {
+                return { status: 'Learning', class: 'text-warning' };
+            } else if (product.rsd >= 10) {
+                return { status: 'Medium', class: 'text-warning' };
+            } else {
+                return { status: 'High', class: 'text-success' };
+            }
+        });
+
+        // Count non-high confidence items
+        const nonHighConfidenceCount = itemStatuses.filter(s => 
+            s.status === 'Learning' || s.status === 'Medium'
+        ).length;
+
+        // Determine order status based on sigma and confidence
         let statusHtml = '';
-        if (weightDiffPercent <= threshold) {
-            statusHtml = `
-                <div class="alert alert-success mb-3">
-                    <strong>Order Verified</strong><br>
-                    Weight within ${threshold}% threshold
-                </div>
-            `;
-        } else if (confidenceLevels.learning > 0) {
+        if (nonHighConfidenceCount > 0) {
+            // Always show warning if any items are still learning/medium confidence
             statusHtml = `
                 <div class="alert alert-warning mb-3">
                     <strong>Learning in Progress</strong><br>
-                    ${confidenceLevels.learning} item${confidenceLevels.learning > 1 ? 's' : ''} still in learning phase
+                    ${nonHighConfidenceCount} item${nonHighConfidenceCount > 1 ? 's' : ''} not yet at high confidence
+                </div>
+            `;
+        } else if (sigmaValue <= 1) {
+            // Only show success if all items are high confidence and weight matches
+            statusHtml = `
+                <div class="alert alert-success mb-3">
+                    <strong>Order Verified</strong><br>
+                    Order weight within expected range
+                </div>
+            `;
+        } else if (sigmaValue > 2) {
+            statusHtml = `
+                <div class="alert alert-danger mb-3">
+                    <strong>Weight Mismatch</strong><br>
+                    All items at high confidence but weight difference exceeds threshold
                 </div>
             `;
         } else {
             statusHtml = `
-                <div class="alert alert-danger mb-3">
-                    <strong>Weight Mismatch</strong><br>
-                    Difference of ${weightDiffPercent.toFixed(1)}% exceeds ${threshold}% threshold
+                <div class="alert alert-warning mb-3">
+                    <strong>Weight Warning</strong><br>
+                    Weight difference between 1σ and 2σ
                 </div>
             `;
         }
-        
-        // Display items
+
+        // Display items with consistent status text
         let itemsHtml = '';
-        order.forEach(item => {
-            const product = this.simulator.products[item.name];
-            let status, statusClass;
-            
-            if (!item.present) {
-                status = 'Missing';
-                statusClass = 'text-danger';
-            } else {
-                const confidence = product.confidence * 100;
-                if (confidence >= this.verifiedThreshold) {
-                    status = `Verified (${confidence.toFixed(1)}%)`;
-                    statusClass = 'text-success';
-                } else {
-                    status = `Learning (${confidence.toFixed(1)}%)`;
-                    statusClass = 'text-warning';
-                }
-            }
-            
+        order.forEach((item, i) => {
+            const { status, class: statusClass } = itemStatuses[i];
             itemsHtml += `
                 <div class="mb-2">
                     <strong>${item.name}</strong><br>
@@ -405,11 +381,11 @@ class UIController {
                 </div>
                 <div class="row">
                     <div class="col-6">Inferred:</div>
-                    <div class="col-6 text-end">${inferredWeight.toFixed(1)}g</div>
+                    <div class="col-6 text-end">${weight.toFixed(1)}g</div>
                 </div>
                 <div class="row">
                     <div class="col-6">Difference:</div>
-                    <div class="col-6 text-end ${weightDiffPercent > threshold ? 'text-danger' : ''}">${weightDiff.toFixed(1)}g (${weightDiffPercent.toFixed(1)}%)</div>
+                    <div class="col-6 text-end ${sigmaValue > threshold ? 'text-danger' : ''}">${weightDiff.toFixed(1)}g</div>
                 </div>
             </div>
         `;
@@ -419,8 +395,39 @@ class UIController {
         
         // Update weight analysis display
         document.getElementById('measured-weight').textContent = measuredWeight.toFixed(1);
-        document.getElementById('inferred-weight').textContent = inferredWeight.toFixed(1);
+        document.getElementById('inferred-weight').textContent = weight.toFixed(1);
         document.getElementById('weight-difference').textContent = weightDiff.toFixed(1);
+    }
+
+    updateProductTable() {
+        const tableBody = document.querySelector('#product-table tbody');
+        tableBody.innerHTML = Array.from(this.simulator.products.entries()).map(([name, product]) => {
+            const [min, max] = productRanges.get(name);
+            
+            // Get status and color
+            let statusText, statusClass;
+            if (product.observations < 5) {
+                statusText = 'Learning';
+                statusClass = 'bg-danger';
+            } else if (product.rsd >= 10) {
+                statusText = 'Medium';
+                statusClass = 'bg-warning';
+            } else {
+                statusText = 'High';
+                statusClass = 'bg-success';
+            }
+
+            return `
+                <tr>
+                    <td>${name}</td>
+                    <td>${min}-${max}</td>
+                    <td>${product.estimatedWeight.toFixed(1)}</td>
+                    <td>${product.observations}</td>
+                    <td>${product.rsd.toFixed(1)}%</td>
+                    <td><span class="badge ${statusClass}">${statusText}</span></td>
+                </tr>
+            `;
+        }).join('');
     }
 
     async generateBatch(batchSize, incomplete = false) {
@@ -431,9 +438,9 @@ class UIController {
 
         if (incomplete) {
             // For incomplete orders, just generate one
-            const { items, totalWeight } = this.simulator.generateOrder(true);
-            const measuredWeight = this.simulator.measureWeight(totalWeight); // Measure only present items
-            await this.processOrder(items, measuredWeight);
+            const order = this.simulator.generateOrder(true);
+            const measuredWeight = this.simulator.measureWeight(order.totalWeight);
+            await this.processOrder(order, measuredWeight);
             this.updateProductTable();
             return;
         }
@@ -445,13 +452,13 @@ class UIController {
 
         // For complete orders, generate a batch
         for (let i = 0; i < batchSize; i++) {
-            const { items, totalWeight } = this.simulator.generateOrder(false);
-            const measuredWeight = this.simulator.measureWeight(totalWeight);
+            const order = this.simulator.generateOrder(false);
+            const measuredWeight = this.simulator.measureWeight(order.totalWeight);
             
             progressBar.style.width = `${((i + 1) / batchSize) * 100}%`;
             progressText.textContent = `Processing order ${i + 1} of ${batchSize}...`;
             
-            await this.processOrder(items, measuredWeight);
+            await this.processOrder(order, measuredWeight);
             this.updateProductTable();
             
             // Small delay to show progress
@@ -469,7 +476,7 @@ class UIController {
     processOrder(order, measuredWeight) {
         // Store current order
         this.currentOrder = {
-            order,
+            order: order.items,
             measuredWeight,
             inferredWeight: this.simulator.inferOrderWeight(order)
         };
@@ -478,45 +485,10 @@ class UIController {
         this.displayCurrentOrder();
         
         // Only update weight estimates if all items are present
-        // We can't learn from incomplete orders as they would skew our weight estimates
-        if (order.every(item => item.present)) {
+        if (order.items.every(item => item.present)) {
             this.simulator.updateWeightEstimates(order, measuredWeight);
             this.updateProductTable();
         }
-    }
-
-    updateProductTable() {
-        const tableBody = document.querySelector('#product-table tbody');
-        tableBody.innerHTML = Object.values(this.simulator.products).map(product => {
-            const [min, max] = product.trueRange;
-            const confidence = product.observations > 0 ? (product.confidence * 100).toFixed(1) : '0.0';
-            
-            // Calculate color based on confidence
-            let bgColor;
-            const confidenceNum = parseFloat(confidence);
-            if (confidenceNum === 0) {
-                bgColor = '#ffebee'; // Start with light red for no observations
-            } else if (confidenceNum < 60) {
-                bgColor = '#ffebee'; // Light red
-            } else if (confidenceNum < 70) {
-                bgColor = '#fff3e0'; // Light orange
-            } else if (confidenceNum < 80) {
-                bgColor = '#fff8e1'; // Light yellow
-            } else if (confidenceNum < 90) {
-                bgColor = '#f1f8e9'; // Light green-yellow
-            } else {
-                bgColor = '#e8f5e9'; // Light green
-            }
-
-            return `
-                <tr style="background-color: ${bgColor}">
-                    <td>${product.name}</td>
-                    <td>${min}-${max}</td>
-                    <td>${product.estimatedWeight ? product.estimatedWeight.toFixed(1) : '0.0'}</td>
-                    <td>${confidence}% (${product.observations} orders)</td>
-                </tr>
-            `;
-        }).join('');
     }
 }
 

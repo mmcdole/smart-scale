@@ -1,166 +1,198 @@
 # QSR Smart Scale Simulator
 
 ## Overview
-A simulation of a smart scale system for Quick Service Restaurants (QSR) that learns to estimate order weights over time. The system focuses on detecting potential missing items by comparing measured weights against expected weights, rather than trying to identify specific items in an order.
+A simulation of a smart scale system for Quick Service Restaurants (QSR) that learns to estimate order weights over time using Welford's algorithm for online statistics. The system focuses on detecting potential missing items by comparing measured weights against expected weights using sigma-based thresholds. It continuously adapts its learning rates and leverages high-confidence items to refine estimates.
 
 ## Core Features
 
 ### Weight Learning System
-- Maintains a database of products with their true weight ranges (used only for simulation)
-- Learns expected weights for each product through repeated observations
-- Uses conservative learning rates to prevent outliers from skewing estimates
-- Tracks confidence levels based on measurement consistency and error rates
-- Never peeks at true weight ranges for estimation - only uses them for simulation
+- **Online Weight Estimation:**  
+  Uses Welford's algorithm to update running statistics (mean and M2) for each product.
+- **Adaptive Updates:**  
+  Implements adaptive learning rates:
+  - **High-confidence items** (≥ 5 observations with RSD < 10%) update slowly (e.g., 10% learning rate) to preserve stability.
+  - **Low-confidence items** update at full rate (100%) to learn quickly.
+  - **Single-item orders** update directly at full rate.
+- **High-Confidence Anchors:**  
+  In multi-item orders, items with high confidence serve as anchors. Remaining weight error is distributed among less-known items.
+- **Measurement Variability:**  
+  Tracks observation counts and rolling windows (e.g., last 10 measurements) to assess recent stability.
+- **Observed Data Only:**  
+  Uses only measurements from orders; hidden true ranges are used solely for simulation purposes.
 
 ### Order Processing
-- Generates random orders of 1-3 items
-- Simulates true weights using Gaussian distribution within item's true range
-- Measures total order weight with small random measurement noise
-- Calculates expected total weight based on learned item weights
-- Flags orders where weight difference exceeds user-defined threshold
+- **Order Generation:**  
+  Randomly generates orders of 1–3 items.
+- **Simulated Weights:**  
+  For simulation, true weights are drawn from a Gaussian distribution within each product's true range.
+- **Measurement Noise:**  
+  Total order weight is measured with added Gaussian noise (σ = 2g).
+- **Inference:**  
+  The inferred total weight is computed as the sum of each product's estimated weight (or a default weight when no observations exist).
 
 ### Weight Difference Detection
-- Compares measured total weight vs inferred total weight
-- Calculates percentage difference between measurements
-- Flags potential missing items when difference exceeds threshold
-- Does not attempt to identify which specific item might be missing
+- **Sigma-Based Analysis:**  
+  Compares the measured total weight to the inferred total weight using the order's aggregated standard deviation:
+  - **Verified (Green):** Difference ≤ 1σ.
+  - **Warning (Yellow):** Difference > 1σ but ≤ 2σ.
+  - **Flagged (Red):** Difference > 2σ.
+- **Confidence Gating:**  
+  If any item in the order is still in a lower confidence state (Learning or Medium), the system displays a warning state rather than triggering a full alert.
 
 ## Weight Inference Algorithm
 
-The system uses statistical analysis to learn and predict item weights. Key components:
+1. **Per-Product Statistics**
+   - **Estimated Weight (Mean):** Updated incrementally using each new measurement.
+   - **M2:** Accumulates the squared differences to compute variance.
+   - **Observation Count (n):** Tracks the number of measurements.
+   - **Default Weight:** Used when no observations exist (e.g., 200g).
 
-1. **Weight Measurement**
-   - Each item has a hidden true weight range (for simulation only)
-   - Actual weights follow a Gaussian distribution within this range
-   - System learns purely from measurements, without knowledge of true ranges
+2. **Statistical Updates (Welford's Algorithm)**
+   - **First Measurement:**  
+     Set the initial estimated weight; M2 is 0.
+   - **Subsequent Measurements:**  
+     ```javascript
+     const delta = newMeasurement - product.estimatedWeight;
+     product.estimatedWeight += delta / product.n;
+     const delta2 = newMeasurement - product.estimatedWeight;
+     product.M2 += delta * delta2;
+     product.n++;
+     ```
+   - **Variance Calculation:**  
+     For n > 1, `variance = M2 / (n - 1)`.
+   - **Standard Deviation (σ):**  
+     `std = sqrt(variance)`.
+   - **Relative Standard Deviation (RSD):**  
+     `RSD = (std / estimatedWeight) * 100`.
 
-2. **Confidence Calculation**
-   The system calculates confidence using multiple statistical factors:
-   
-   a. Sample Statistics:
-   - Sample mean and standard deviation (n-1 for unbiased estimation)
-   - Standard Error of the Mean (SEM)
-   - Coefficient of Variation (CV)
-   - 95% confidence interval margin of error
+3. **Measurement Stability Assessment**
+   - **Learning Phase:**  
+     Fewer than 5 observations.
+   - **Medium Phase:**  
+     5 or more observations with RSD ≥ 10%.
+   - **High Phase:**  
+     5 or more observations with RSD < 10%.
+   - A rolling window (e.g., last 10 measurements) is used to gauge recent stability.
 
-   b. Confidence Factors:
-   - Sample size factor (based on Central Limit Theorem)
-   - Precision factor (based on CV)
-   - Stability factor (recent vs overall variation)
-   - Error trend (recent measurement errors)
+4. **Order Weight Analysis**
+   - **Inferred Weight:**  
+     The sum of each product's estimated weight (or default weight if unobserved).
+   - **Order Standard Deviation:**  
+     Computed as the square root of the sum of individual product variances (assuming independence).
+   - **Sigma-Based Thresholds:**
+     - Verified: Difference ≤ 1σ.
+     - Warning: Difference > 1σ and ≤ 2σ.
+     - Flagged: Difference > 2σ.
+   - **Confidence Gating:**  
+     Orders are flagged only when all items are in the High phase. If any items are still Learning or Medium, the order is marked as "Learning in Progress."
 
-   c. Confidence Levels:
-   - 0% for no observations
-   - 50% base confidence for initial observations
-   - Gradual increase based on:
-     * Sample size
-     * Measurement consistency
-     * Statistical uncertainty
-   - Maximum 99% with excellent consistency
-
-3. **Incomplete Order Handling**
-   - Missing items are marked with weight = 0
-   - Total order weight is sum of present items only
-   - System learns from present items in incomplete orders
-   - Missing items do not affect weight estimation
-
-4. **Learning Process**
-   - No prior assumptions about weights
-   - Learns from actual measurements
-   - Uses exponential moving average for updates
-   - Maintains history of recent measurements
-   - Adapts learning rate based on sample size
+5. **Multi-Item Weight Learning**
+   - **Learning Rate Strategy:**
+     - **Single Items:** Direct learning at full rate (100%)
+     - **Multiple Items:** Learning rate scales with uncertainty
+       - Base rate decays exponentially with item count: 2^(n-1) × 0.5
+       - Examples: 1 item → 1.0, 2 items → 0.5, 3 items → 0.25, etc.
+       - Rationale: More items = more uncertainty in weight distribution
+   - **Adaptive Adjustments:**
+     - Learning rate scales with observation count: min(1.0, 5/observations)
+     - High RSD (>15%) increases learning rate by 50% to allow faster correction
+     - Combined scaling ensures:
+       - New items learn quickly
+       - Stable items maintain accuracy
+       - Poor estimates can self-correct
+   - **Single-Item Orders:** Direct learning at full rate
+   - **Weight Distribution:**
+     - Uses proportional distribution based on current estimates
+     - Ratio = item_estimate / total_estimated_weight
+     - Individual weight = measured_weight × ratio
 
 ## Requirements
 
 1. **Display Requirements**
-   - Show product table with:
-     * Product name
-     * Hidden range (g) - for simulation only
-     * Estimated weight (g)
-     * Confidence level with order count
-   - Color-code confidence levels
-   - Mark missing items in red
-
+   - **Product Table:**  
+     Show:
+     - Product name.
+     - Hidden true weight range (simulation only).
+     - Estimated weight (g).
+     - Observation count (n).
+     - Variability (RSD %).
+     - Status indicator:
+       - **Learning:** n < 5.
+       - **Medium:** n ≥ 5 and RSD ≥ 10%.
+       - **High:** n ≥ 5 and RSD < 10%.
+     - Use color coding for status (e.g., red for Learning, yellow for Medium, green for High).
+     - Clearly mark missing items in red.
+   
 2. **Statistical Requirements**
-   - Minimum 3 observations before statistical analysis
-   - Consider measurement variance
-   - Account for sample size in confidence
-   - Handle edge cases (zero weights, single samples)
-   - Degrade confidence for inconsistent measurements
+   - Use Welford's algorithm for online statistics.
+   - Require a minimum of 5 observations for high confidence.
+   - Track per-product variance and handle edge cases (e.g., single samples).
+   - Implement confidence gating based on observation count and RSD.
 
 3. **Operational Requirements**
-   - Start with no weight assumptions
-   - Build confidence gradually
-   - Handle incomplete orders correctly
-   - Maintain measurement history
-   - Update estimates in real-time
+   - Allow configuration of default weights.
+   - Incrementally build confidence as more data is gathered.
+   - Properly handle incomplete orders.
+   - Update estimates in real time.
 
 4. **Performance Targets**
-   - Achieve 90% confidence after ~25 consistent measurements
-   - Reach 95% confidence after ~40 measurements with good consistency
-   - Maximum 99% confidence with excellent long-term consistency
-   - Degrade confidence if measurements become inconsistent
+   - Achieve high confidence (n ≥ 5 and RSD < 10%) as early as possible.
+   - Maintain low RSD (< 10%) for high confidence.
+   - Degrade confidence if measurements become inconsistent.
 
 ## User Interface
 
 ### Current Order Display
-- Shows items in current order with individual confidence levels
-- Displays three warning states for weight differences:
-  1. Green (Success):
-     - Weight within threshold
-     - "Order weight within expected range"
-  2. Yellow (Warning):
-     - Weight exceeds threshold
-     - One or more items have low confidence (<80%)
-     - Shows number of low confidence items
-  3. Red (Danger):
-     - Weight exceeds threshold
-     - All items have high confidence (≥80%)
-     - Strong warning message
-
+- **Status:**  
+  Display each item's name and its stability status (Learning, Medium, High).
+- **Warning States:**  
+  - **Green (Success):**  
+    "Order weight within expected range" when measured weight difference is ≤ 1σ.
+  - **Yellow (Warning):**  
+    When weight difference is between 1σ and 2σ or when some items are still Learning/Medium.
+  - **Red (Danger):**  
+    When weight difference exceeds 2σ and all items are High confidence.
+  
 ### Weight Analysis Panel
-- Displays measured and inferred weights
-- Shows weight difference with color coding:
-  - Green: Within threshold
-  - Yellow: Exceeds threshold but low confidence
-  - Red: Exceeds threshold with high confidence
-- User-adjustable weight difference threshold
+- Display measured and inferred weights.
+- Visualize the weight difference with color coding based on sigma thresholds.
+- Include a user-adjustable sigma multiplier slider (range: 1.0 to 3.0) for detection threshold adjustment.
 
 ### Product Database View
-- Lists all available products
-- Shows true weight ranges (simulation only)
-- Displays learned weight estimates
-- Shows confidence levels (0-95%):
-  - Normal range: 0-80%
-  - High confidence range: 80-95%
-  - Color coded based on confidence level
+- List all products with:
+  - True weight ranges (simulation only).
+  - Estimated weights.
+  - Observation counts.
+  - RSD values.
+  - Status indicators (Learning, Medium, High) with color coding.
 
 ### Controls
-- Batch size selection for processing multiple orders
-- Weight difference threshold adjustment (1-20%)
-- Options to generate normal or incomplete orders
+- **Batch Size Selection:**  
+  For processing multiple orders simultaneously.
+- **Sigma Multiplier Adjustment:**  
+  Adjust the weight difference threshold.
+- **Order Generation Options:**  
+  Toggle between complete and incomplete orders.
 
 ## Simulation Parameters
 
 ### Measurement Noise
-- Small random variation added to true weights
-- Uses Gaussian distribution for realistic variation
-- Standard deviation of 2g for measurement error
+- Small random variation added to true weights.
+- Uses Gaussian distribution with a standard deviation of 2g for measurement error.
 
 ### Order Generation
-- Random selection of 1-3 items per order
-- Option to generate incomplete orders by removing one item
-- True weights generated within specified ranges
-- Realistic variation in item weights using Gaussian distribution
+- Randomly selects 1–3 items per order.
+- Option to generate incomplete orders by omitting one item.
+- True weights are generated using a Gaussian distribution within each product's true range.
 
-### Learning Parameters
-- Base learning rate: 0.2
-- Learning rate reduced by:
-  - Higher confidence levels
-  - Larger error variance
-  - More observations
-- Weight estimates bounded by recent history (±10%)
-- Minimum 3 observations before confidence calculation
-- Rolling window of 10 measurements for history
-- Uses last 5 measurements for variance calculation
+### Statistical Parameters
+- Minimum observations for high confidence: 5.
+- RSD threshold for high confidence: < 10%.
+- Sigma thresholds for flagging:
+  - Verified: ≤ 1σ.
+  - Warning: > 1σ and ≤ 2σ.
+  - Flagged: > 2σ.
+- Default weight: 200g (used when no observations exist).
+
+## Summary
+This system uses online statistical methods to continuously refine product weight estimates, leveraging adaptive learning rates and high-confidence anchors to improve accuracy. Orders are evaluated using sigma-based thresholds, with confidence gating ensuring that only orders with fully calibrated items trigger alerts. The approach emphasizes single-item orders for direct calibration and uses proportional updates for multi-item orders to minimize error propagation.
