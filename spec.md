@@ -1,144 +1,108 @@
 # QSR Smart Scale Simulator
 
 ## Overview
-A simulation of a smart scale system for Quick Service Restaurants (QSR) that learns to estimate order weights over time using Welford's algorithm for online statistics. The system focuses on detecting potential missing items by comparing measured weights against expected weights using sigma-based thresholds. It continuously adapts its learning rates and leverages high-confidence items to refine estimates.
+A simulation of a smart scale system for Quick Service Restaurants (QSR) that uses a Kalman filter to learn and track product weights. The system detects potential missing items by comparing measured weights against inferred weights using sigma-based thresholds.
 
 ## Core Features
 
 ### Weight Learning System
-- **Online Weight Estimation:**  
-  Uses Welford's algorithm to update running statistics (mean and M2) for each product.
-- **Adaptive Updates:**  
-  Implements adaptive learning rates:
-  - **High-confidence items** (≥ 5 observations with RSD < 10%) update slowly (e.g., 10% learning rate) to preserve stability.
-  - **Low-confidence items** update at full rate (100%) to learn quickly.
-  - **Single-item orders** update directly at full rate.
-- **High-Confidence Anchors:**  
-  In multi-item orders, items with high confidence serve as anchors. Remaining weight error is distributed among less-known items.
-- **Measurement Variability:**  
-  Tracks observation counts and rolling windows (e.g., last 10 measurements) to assess recent stability.
-- **Observed Data Only:**  
-  Uses only measurements from orders; hidden true ranges are used solely for simulation purposes.
+- **Kalman Filter Implementation:**
+  - Each product maintains its own Kalman filter state
+  - State estimate (x): Current weight estimate
+  - State uncertainty (P): Confidence in the estimate
+  - Measurement noise (R = 4): Reflects 2g std dev in scale measurements
+  - Process noise (Q = 16): Accounts for natural weight variation
+- **Adaptive Updates:**
+  - All updates use Kalman filter
+  - Early updates naturally more aggressive due to high initial uncertainty
+  - Later updates more conservative as uncertainty decreases
+- **Confidence Levels:**
+  - Learning: Fewer than 5 observations
+  - Medium: Uncertainty (P) > 20
+  - High: Uncertainty (P) ≤ 20
 
 ### Order Processing
-- **Order Generation:**  
-  Randomly generates orders of 1–3 items.
-- **Simulated Weights:**  
-  For simulation, true weights are drawn from a Gaussian distribution within each product's true range.
-- **Measurement Noise:**  
-  Total order weight is measured with added Gaussian noise (σ = 2g).
-- **Inference:**  
-  The inferred total weight is computed as the sum of each product's estimated weight (or a default weight when no observations exist).
+- **Order Generation:**
+  - Randomly generates orders of 1-6 items
+  - True weights drawn from Gaussian distribution within product ranges
+- **Measurement Simulation:**
+  - Adds Gaussian noise (σ = 2g) to true weights
+- **Weight Inference:**
+  - Sums individual Kalman estimates for total weight
+  - Combines individual uncertainties for total variance
 
 ### Weight Difference Detection
-- **Sigma-Based Analysis:**  
-  Compares the measured total weight to the inferred total weight using the order's aggregated standard deviation:
-  - **Verified (Green):** Difference ≤ 1σ.
-  - **Warning (Yellow):** Difference > 1σ but ≤ 2σ.
-  - **Flagged (Red):** Difference > 2σ.
-- **Confidence Gating:**  
-  If any item in the order is still in a lower confidence state (Learning or Medium), the system displays a warning state rather than triggering a full alert.
+- **Sigma-Based Analysis:**
+  - Compares measured vs inferred weights using Kalman uncertainty
+  - Verified (Green): Difference ≤ 1σ
+  - Warning (Yellow): 1σ < Difference ≤ 2σ
+  - Flagged (Red): Difference > 2σ
+- **Confidence Gating:**
+  - Full alerts only when all items at high confidence
+  - Warning state when any items still learning/medium confidence
 
-## Weight Inference Algorithm
+## Weight Learning Algorithm
 
-1. **Per-Product Statistics**
-   - **Estimated Weight (Mean):** Updated incrementally using each new measurement.
-   - **M2:** Accumulates the squared differences to compute variance.
-   - **Observation Count (n):** Tracks the number of measurements.
-   - **Default Weight:** Used when no observations exist (e.g., 200g).
+1. **Kalman Filter State**
+   - **State (x):** Current weight estimate
+   - **Uncertainty (P):** Starts at 1000, decreases with observations
+   - **Parameters:**
+     - Measurement noise (R = 4): Scale precision
+     - Process noise (Q = 16): Natural weight variation
 
-2. **Statistical Updates (Welford's Algorithm)**
-   - **First Measurement:**  
-     Set the initial estimated weight; M2 is 0.
-   - **Subsequent Measurements:**  
+2. **Update Process**
+   - **Single-Item Orders:**
      ```javascript
-     const delta = newMeasurement - product.estimatedWeight;
-     product.estimatedWeight += delta / product.n;
-     const delta2 = newMeasurement - product.estimatedWeight;
-     product.M2 += delta * delta2;
-     product.n++;
+     // Direct Kalman update with measured weight
+     P = P + Q                    // Increase uncertainty
+     K = P / (P + R)             // Compute Kalman gain
+     x = x + K * (measurement - x)// Update estimate
+     P = (1 - K) * P             // Update uncertainty
      ```
-   - **Variance Calculation:**  
-     For n > 1, `variance = M2 / (n - 1)`.
-   - **Standard Deviation (σ):**  
-     `std = sqrt(variance)`.
-   - **Relative Standard Deviation (RSD):**  
-     `RSD = (std / estimatedWeight) * 100`.
+   
+   - **Multi-Item Orders:**
+     ```javascript
+     // Distribute total error proportionally
+     ratio = item_estimate / total_estimate
+     target = item_estimate + (total_error * ratio)
+     // Then Kalman update with target
+     ```
 
-3. **Measurement Stability Assessment**
-   - **Learning Phase:**  
-     Fewer than 5 observations.
-   - **Medium Phase:**  
-     5 or more observations with RSD ≥ 10%.
-   - **High Phase:**  
-     5 or more observations with RSD < 10%.
-   - A rolling window (e.g., last 10 measurements) is used to gauge recent stability.
+3. **Confidence Assessment**
+   - **Learning Phase:** n < 5 observations
+   - **Medium Phase:** P > 20 (higher uncertainty)
+   - **High Phase:** P ≤ 20 (lower uncertainty)
 
-4. **Order Weight Analysis**
-   - **Inferred Weight:**  
-     The sum of each product's estimated weight (or default weight if unobserved).
-   - **Order Standard Deviation:**  
-     Computed as the square root of the sum of individual product variances (assuming independence).
-   - **Sigma-Based Thresholds:**
-     - Verified: Difference ≤ 1σ.
-     - Warning: Difference > 1σ and ≤ 2σ.
-     - Flagged: Difference > 2σ.
-   - **Confidence Gating:**  
-     Orders are flagged only when all items are in the High phase. If any items are still Learning or Medium, the order is marked as "Learning in Progress."
-
-5. **Multi-Item Weight Learning**
-   - **Learning Rate Strategy:**
-     - **Single Items:** Direct learning at full rate (100%)
-     - **Multiple Items:** Learning rate scales with uncertainty
-       - Base rate decays exponentially with item count: 2^(n-1) × 0.5
-       - Examples: 1 item → 1.0, 2 items → 0.5, 3 items → 0.25, etc.
-       - Rationale: More items = more uncertainty in weight distribution
-   - **Adaptive Adjustments:**
-     - Learning rate scales with observation count: min(1.0, 5/observations)
-     - High RSD (>15%) increases learning rate by 50% to allow faster correction
-     - Combined scaling ensures:
-       - New items learn quickly
-       - Stable items maintain accuracy
-       - Poor estimates can self-correct
-   - **Single-Item Orders:** Direct learning at full rate
-   - **Weight Distribution:**
-     - Uses proportional distribution based on current estimates
-     - Ratio = item_estimate / total_estimated_weight
-     - Individual weight = measured_weight × ratio
+4. **Order Analysis**
+   - **Total Weight:** Sum of Kalman estimates
+   - **Total Variance:** Sum of individual uncertainties (P values)
+   - **Sigma Calculation:** difference / sqrt(total_variance)
 
 ## Requirements
 
-1. **Display Requirements**
-   - **Product Table:**  
-     Show:
-     - Product name.
-     - Hidden true weight range (simulation only).
-     - Estimated weight (g).
-     - Observation count (n).
-     - Variability (RSD %).
-     - Status indicator:
-       - **Learning:** n < 5.
-       - **Medium:** n ≥ 5 and RSD ≥ 10%.
-       - **High:** n ≥ 5 and RSD < 10%.
-     - Use color coding for status (e.g., red for Learning, yellow for Medium, green for High).
-     - Clearly mark missing items in red.
-   
-2. **Statistical Requirements**
-   - Use Welford's algorithm for online statistics.
-   - Require a minimum of 5 observations for high confidence.
-   - Track per-product variance and handle edge cases (e.g., single samples).
-   - Implement confidence gating based on observation count and RSD.
+### Display Requirements
+- **Product Table:**
+  - Product name
+  - True range (simulation only)
+  - Estimated weight (g)
+  - Observation count (n)
+  - Current uncertainty (P)
+  - Status indicator:
+    - Learning: n < 5
+    - Medium: P > 20
+    - High: P ≤ 20
 
-3. **Operational Requirements**
-   - Allow configuration of default weights.
-   - Incrementally build confidence as more data is gathered.
-   - Properly handle incomplete orders.
-   - Update estimates in real time.
+### Statistical Requirements
+- Use Kalman filter for weight tracking
+- Require minimum 5 observations before confidence assessment
+- Track per-product uncertainty (P)
+- Implement confidence gating based on uncertainty
 
-4. **Performance Targets**
-   - Achieve high confidence (n ≥ 5 and RSD < 10%) as early as possible.
-   - Maintain low RSD (< 10%) for high confidence.
-   - Degrade confidence if measurements become inconsistent.
+### Operational Requirements
+- Allow configuration of Kalman parameters
+- Build confidence incrementally
+- Handle incomplete orders
+- Real-time updates
 
 ## User Interface
 
@@ -175,24 +139,12 @@ A simulation of a smart scale system for Quick Service Restaurants (QSR) that le
   Toggle between complete and incomplete orders.
 
 ## Simulation Parameters
-
-### Measurement Noise
-- Small random variation added to true weights.
-- Uses Gaussian distribution with a standard deviation of 2g for measurement error.
-
-### Order Generation
-- Randomly selects 1–3 items per order.
-- Option to generate incomplete orders by omitting one item.
-- True weights are generated using a Gaussian distribution within each product's true range.
-
-### Statistical Parameters
-- Minimum observations for high confidence: 5.
-- RSD threshold for high confidence: < 10%.
-- Sigma thresholds for flagging:
-  - Verified: ≤ 1σ.
-  - Warning: > 1σ and ≤ 2σ.
-  - Flagged: > 2σ.
-- Default weight: 200g (used when no observations exist).
+- Measurement noise: 2g std dev (R = 4)
+- Process noise: 4g std dev (Q = 16)
+- Initial uncertainty: P = 1000
+- Confidence thresholds:
+  - Medium to High: P ≤ 20
+  - Learning to Medium: n ≥ 5
 
 ## Summary
-This system uses online statistical methods to continuously refine product weight estimates, leveraging adaptive learning rates and high-confidence anchors to improve accuracy. Orders are evaluated using sigma-based thresholds, with confidence gating ensuring that only orders with fully calibrated items trigger alerts. The approach emphasizes single-item orders for direct calibration and uses proportional updates for multi-item orders to minimize error propagation.
+This system uses Kalman filters to track product weights, providing a statistically sound basis for weight estimation and uncertainty quantification. The approach emphasizes proper uncertainty tracking and confidence assessment, using sigma-based thresholds for anomaly detection while ensuring alerts are only triggered when confidence is high.

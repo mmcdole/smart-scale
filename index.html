@@ -70,6 +70,16 @@
                         <h5 class="mb-0">Training Controls</h5>
                     </div>
                     <div class="card-body">
+                        <!-- Algorithm selector at the top -->
+                        <div class="mb-3">
+                            <label for="algorithm-selector" class="form-label">Weight Estimation Algorithm</label>
+                            <select class="form-select" id="algorithm-selector">
+                                <option value="kalman">Kalman Filter</option>
+                                <option value="ema">Exponential Moving Average</option>
+                                <option value="simple">Simple Average</option>
+                            </select>
+                        </div>
+
                         <div class="mb-3">
                             <label for="batch-size" class="form-label">Batch Size:</label>
                             <input type="number" id="batch-size" class="form-control" value="10" min="1" max="1000">
@@ -115,8 +125,8 @@
                                 </label>
                                 <div class="d-flex align-items-center gap-2">
                                     <input type="range" class="form-range flex-grow-1" 
-                                           id="detection-threshold" min="1.0" max="3.0" step="0.1" value="2.0">
-                                    <span class="badge bg-primary" id="detection-threshold-value">2.0&#963;</span>
+                                           id="detection-threshold" min="1.0" max="10.0" step="0.1" value="4.0">
+                                    <span class="badge bg-primary" id="detection-threshold-value">4.0&#963;</span>
                                 </div>
                             </div>
                         </div>
@@ -127,16 +137,22 @@
                             <div class="mb-2">
                                 <div class="d-flex justify-content-between">
                                     <span>Learning</span>
-                                    <small class="text-muted">n < 5</small>
+                                    <small class="text-muted">n < 10 observations</small>
                                 </div>
                                 <div class="d-flex justify-content-between">
                                     <span>Medium</span>
-                                    <small class="text-muted">n ≥ 5, RSD ≥ 10%</small>
+                                    <small class="text-muted">Higher uncertainty (P > 50)</small>
                                 </div>
                                 <div class="d-flex justify-content-between">
                                     <span>High</span>
-                                    <small class="text-muted">n ≥ 5, RSD < 10%</small>
+                                    <small class="text-muted">Stable uncertainty (P ≤ 50)</small>
                                 </div>
+                            </div>
+                            <div class="mt-2 small text-muted">
+                                <i class="bi bi-info-circle"></i>
+                                Uncertainty (P) reflects our confidence in the weight estimate. It starts high (1000) 
+                                and decreases as we learn. Values near 30-50 indicate a well-calibrated estimate 
+                                accounting for natural variation in food preparation and measurement precision.
                             </div>
                         </div>
 
@@ -191,7 +207,7 @@
                                         <th>True Range (g)</th>
                                         <th>Est. Weight (g)</th>
                                         <th>n</th>
-                                        <th>RSD (%)</th>
+                                        <th>Notes</th>
                                         <th>Status</th>
                                     </tr>
                                 </thead>
