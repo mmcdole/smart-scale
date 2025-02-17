@@ -1,25 +1,36 @@
-class OrderGenerator {
+class OrderGenerator extends IOrderGenerator {
     constructor(products) {
-        this.products = products;
+        super(products)
+        //  Match Matt's defaults
+        this.setNumberOfUniqueItemsRange(1, 3);
+        this.setItemQuantityRange(1, 2);
     }
 
     generateCompleteOrder(batchSize = 1, minItems = 1) {
+        this.setNumberOfUniqueItemsRange(minItems, this.maxUniqueItemsPerOrder)
         const orders = [];
         for (let i = 0; i < batchSize; i++) {
-            const numItems = Math.floor(Math.random() * 3) + minItems; // 1-3 items normally, or 2-4 if minItems=2
+            const numItems = this.randomInteger(this.minUniqueItemsPerOrder, this.maxUniqueItemsPerOrder)
             const items = [];
-            
+
             // Create a shuffled copy of product IDs to pick from
             const availableProducts = [...this.products]
                 .sort(() => Math.random() - 0.5)
                 .map(p => p.id);
-            
+
             for (let j = 0; j < numItems; j++) {
                 const productId = availableProducts[j % availableProducts.length];
-                const quantity = Math.floor(Math.random() * 2) + 1; // 1-2 quantity
-                items.push(new Item(productId, quantity));
+                const quantity = this.randomInteger(this.minItemQuantity, this.maxItemQuantity) // 1-2 quantity
+                const product = products.find(p => p.id === productId);
+                let totalWeight = 0;
+                for (let k = 0; k < quantity; k++) {
+                    // distinct weight for each individual product in the range
+                    // uses sampling from a uniform distribution
+                    totalWeight += product.meanWeight + (Math.random() * 40 - 20);
+                }
+                items.push(new Item(productId, quantity, totalWeight));
             }
-            
+
             orders.push(new Order(items));
         }
         return orders;
@@ -28,11 +39,11 @@ class OrderGenerator {
     generateIncompleteOrder() {
         // Generate a complete order with guaranteed 2+ items
         const order = this.generateCompleteOrder(1, 2)[0];
-        
+
         // Randomly select one item to mark as missing
         const missingIndex = Math.floor(Math.random() * order.items.length);
         order.items[missingIndex].missing = true;
-        
+
         return order;
     }
 }
