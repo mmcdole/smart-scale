@@ -30,9 +30,16 @@ const products = [
 // Initialize estimators
 const emaEstimator = new EMAEstimator();
 const kalmanEstimator = new KalmanEstimator();
+const bayesianLREstimator = new BayesianLREstimator()
 
 // Initialize simulator with EMA estimator as default
-let simulator = new Simulator(products, emaEstimator);
+let defaultOrderGenerator = new OrderGenerator(products)
+let guassianOrderGenerator = new GuassianOrderGenerator(products)
+guassianOrderGenerator.setItemQuantityRange(1, 12)
+guassianOrderGenerator.setNumberOfUniqueItemsRange(1, 5)
+
+// let simulator = new Simulator(defaultOrderGenerator, emaEstimator);
+let simulator = new Simulator(defaultOrderGenerator, emaEstimator);
 let currentEstimator = 'ema';
 
 // UI Elements
@@ -241,11 +248,14 @@ async function generateOrders(batchSize, incomplete = false) {
         
         // Calculate true weight (only for items that are present)
         const trueWeight = order.items
-            .filter(item => !item.missing)
             .reduce((total, item) => {
-                const product = products.find(p => p.id === item.productId);
-                const itemWeight = product.meanWeight + (Math.random() * 40 - 20);
-                return total + (itemWeight * item.quantity);
+                if(!item.missing){
+                    return total + item.totalWeight;
+                }
+                else{
+                    // one item missing
+                    return total + (item.totalWeight - (item.totalWeight/item.quantity))
+                }
             }, 0);
         
         // Don't update estimator for incomplete orders, just show the verification
@@ -263,9 +273,7 @@ async function generateOrders(batchSize, incomplete = false) {
             const order = simulator.generateCompleteOrders(1)[0];
                 
             const trueWeight = order.items.reduce((total, item) => {
-                const product = products.find(p => p.id === item.productId);
-                const itemWeight = product.meanWeight + (Math.random() * 40 - 20);
-                return total + (itemWeight * item.quantity);
+                return total + item.totalWeight;
             }, 0);
             
             // Store the true weight with the order
@@ -307,7 +315,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add event listeners
     estimatorSelect.addEventListener('change', (e) => {
         currentEstimator = e.target.value;
-        simulator.setWeightEstimator(currentEstimator === 'ema' ? emaEstimator : kalmanEstimator);
+        switch (currentEstimator) {
+            case 'ema':
+              simulator.setWeightEstimator(emaEstimator);
+              break;
+            case 'kalman':
+              simulator.setWeightEstimator(kalmanEstimator);
+              break;
+            case 'bayesianLRE':
+              simulator.setWeightEstimator(bayesianLREstimator);
+              break;
+            default:
+              console.error(`Unknown estimator selected: ${currentEstimator}`);
+              break;
+          }
         updateProductTable();
     });
 
@@ -332,6 +353,7 @@ document.addEventListener('DOMContentLoaded', () => {
     estimatorSelect.innerHTML = `
         <option value="ema">${emaEstimator.getName()}</option>
         <option value="kalman">${kalmanEstimator.getName()}</option>
+        <option value="bayesianLRE">${bayesianLREstimator.getName()}</option>
     `;
 
     // Initial UI setup

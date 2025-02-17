@@ -1,7 +1,6 @@
 class Simulator {
-    constructor(products, weightEstimator) {
-        this.products = products;
-        this.generator = new OrderGenerator(products);
+    constructor(orderGenerator, weightEstimator) {
+        this.generator = orderGenerator;
         this.weightEstimator = weightEstimator;
         this.currentOrder = null;
     }
