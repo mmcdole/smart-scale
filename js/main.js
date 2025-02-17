@@ -100,19 +100,22 @@ function getOrderStatus(order, trueWeight) {
     if (hasLearningItems) {
         return {
             type: 'warning',
+            header: 'Learning in Progress',
             message: 'Still learning item weights - verification not yet reliable',
             class: 'bg-yellow-100 text-yellow-800 border-yellow-300'
         };
     } else if (allItemsConfident && sigma <= verificationThreshold) {
         return {
             type: 'success',
-            message: 'Order verified - weight within expected range',
+            header: 'Order Verified',
+            message: 'Weight within expected range',
             class: 'bg-green-100 text-green-800 border-green-300'
         };
     } else if (allItemsConfident) {
         return {
             type: 'error',
-            message: 'Weight discrepancy detected - order weight out of expected range',
+            header: 'Weight Discrepancy',
+            message: 'Order weight out of expected range',
             class: 'bg-red-100 text-red-800 border-red-300'
         };
     }
@@ -132,13 +135,18 @@ function updateCurrentOrder(order) {
     const orderStatus = getOrderStatus(order, order.trueWeight); // We'll need to pass trueWeight with the order
     const statusBanner = orderStatus ? `
         <div class="mb-4 p-3 border rounded-lg ${orderStatus.class}">
-            <div class="font-medium">${orderStatus.type === 'error' ? '⚠️' : ''} ${orderStatus.message}</div>
-            ${orderStatus.type === 'error' ? `
-                <div class="text-sm mt-1">
-                    Expected weight differs by ${document.getElementById('sigma-difference').textContent}σ 
-                    (threshold: ${verificationThreshold.toFixed(1)}σ)
-                </div>
-            ` : ''}
+            <div class="font-bold mb-1">
+                ${orderStatus.type === 'error' ? '⚠️ ' : ''}${orderStatus.header}
+            </div>
+            <div class="text-sm">
+                ${orderStatus.message}
+                ${orderStatus.type === 'error' ? `
+                    <div class="mt-1">
+                        Differs by ${document.getElementById('sigma-difference').textContent}σ 
+                        (threshold: ${verificationThreshold.toFixed(1)}σ)
+                    </div>
+                ` : ''}
+            </div>
         </div>
     ` : '';
     
