@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Scale Estimator Evaluation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load dependencies -->
+    <script src="../interfaces.js"></script>
+    <script src="../estimators/EMAEstimator.js"></script>
+    <script src="../estimators/KalmanEstimator.js"></script>
+    <script src="../estimators/BayesianLREstimator.js"></script>
+    <script src="../main.js"></script>
+    <script src="evaluator.js"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-2xl font-bold">Estimator Evaluation Results</h2>
+            <button onclick="runEvaluations()" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                Run Evals
+            </button>
+        </div>
+        
+        <div class="bg-white rounded-lg shadow overflow-x-auto">
+            <div class="border-b p-4">
+                <h5 class="font-semibold">Evaluation Matrix</h5>
+                <p class="text-sm text-gray-600">Comparison of estimators across different evaluation metrics</p>
+            </div>
+            <div class="p-4">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Evaluation Type</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">EMA Estimator</th>
+                            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Kalman Estimator</th>
+                            <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Bayesian LR Estimator</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200" id="resultsTable">
+                        <!-- Convergence Speed Row -->
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Convergence Speed</td>
+                            <td class="px-6 py-4 text-sm text-gray-500">Average orders needed to converge within error threshold</td>
+                            <td class="px-6 py-4 text-center text-sm text-gray-900" data-estimator="ema" data-metric="convergence">-</td>
+                            <td class="px-6 py-4 text-center text-sm text-gray-900" data-estimator="kalman" data-metric="convergence">-</td>
+                            <td class="px-6 py-4 text-center text-sm text-gray-900" data-estimator="bayesian" data-metric="convergence">-</td>
+                        </tr>
+                        <!-- Outlier Resistance Row -->
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Outlier Resistance</td>
+                            <td class="px-6 py-4 text-sm text-gray-500">Ability to maintain accuracy in presence of outliers</td>
+                            <td class="px-6 py-4 text-center text-sm text-gray-900" data-estimator="ema" data-metric="outlier">Coming soon</td>
+                            <td class="px-6 py-4 text-center text-sm text-gray-900" data-estimator="kalman" data-metric="outlier">Coming soon</td>
+                            <td class="px-6 py-4 text-center text-sm text-gray-900" data-estimator="bayesian" data-metric="outlier">Coming soon</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Detailed Results Section -->
+        <div class="mt-4 bg-white rounded-lg shadow">
+            <div class="border-b p-4">
+                <h5 class="font-semibold">Detailed Results</h5>
+            </div>
+            <div id="detailedResults" class="p-4">
+                <!-- Detailed results will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function runEvaluations() {
+            const button = document.querySelector('button');
+            button.disabled = true;
+            button.textContent = 'Running...';
+            button.classList.add('opacity-50');
+
+            try {
+                // Run the evaluations
+                const results = await runAllEvaluations();
+                displayResults(results);
+                
+                button.textContent = 'Run Evals';
+                button.disabled = false;
+                button.classList.remove('opacity-50');
+            } catch (error) {
+                console.error('Error running evaluations:', error);
+                button.textContent = 'Error';
+                button.classList.add('bg-red-500');
+                setTimeout(() => {
+                    button.textContent = 'Run Evals';
+                    button.classList.remove('bg-red-500');
+                    button.disabled = false;
+                    button.classList.remove('opacity-50');
+                }, 3000);
+            }
+        }
+
+        function displayResults(results) {
+            // Update convergence scores in the matrix
+            results.forEach(result => {
+                const estimatorType = result.estimatorName.toLowerCase().includes('ema') ? 'ema' : 
+                                    result.estimatorName.toLowerCase().includes('kalman') ? 'kalman' : 'bayesian';
+                
+                // Update convergence score
+                const convergenceCell = document.querySelector(`[data-estimator="${estimatorType}"][data-metric="convergence"]`);
+                if (convergenceCell) {
+                    convergenceCell.textContent = result.convergenceScore === Infinity ? 'Did not converge' : result.convergenceScore.toFixed(2);
+                }
+            });
+            
+            // Update detailed results
+            const detailedDiv = document.getElementById('detailedResults');
+            detailedDiv.innerHTML = results.map(result => `
+                <div class="mb-6">
+                    <h6 class="font-semibold mb-2">${result.estimatorName}</h6>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-gray-50 p-4 rounded">
+                            <h7 class="font-medium text-sm mb-2 block">Convergence Details</h7>
+                            <div class="space-y-1">
+                                <div class="text-sm">Score: ${result.convergenceScore === Infinity ? 'Did not converge' : result.convergenceScore.toFixed(2)}</div>
+                                <div class="text-sm">Orders Processed: ${result.ordersProcessed}</div>
+                                <div class="text-sm">Products Converged: ${result.convergedProducts}</div>
+                            </div>
+                            <div class="mt-4 space-y-1">
+                                <div class="text-sm font-medium">Convergence by Product:</div>
+                                ${Object.entries(result.convergenceOrders)
+                                    .map(([productId, orderNum]) => 
+                                        `<div class="text-sm">${productId}: ${orderNum === null ? 'Did not converge' : `Converged at order ${orderNum}`}</div>`
+                                    ).join('')}
+                            </div>
+                        </div>
+                        <div class="bg-gray-50 p-4 rounded">
+                            <h7 class="font-medium text-sm mb-2 block">Outlier Resistance Details</h7>
+                            <div class="text-sm text-gray-500">Coming soon</div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Try to load previous results from localStorage
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedResults = localStorage.getItem('evalResults');
+            if (savedResults) {
+                displayResults(JSON.parse(savedResults));
+            }
+        });
+    </script>
+</body>
+</html>
