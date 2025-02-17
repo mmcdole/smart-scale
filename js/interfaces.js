@@ -78,8 +78,20 @@ class IOrderGenerator {
     }
 
     // uniform random distribution
+    // JS TODO: move to utils
     randomInteger(min, max) {
         return Math.floor(Math.random() * (max - min + 1)) + min;
     }
 
+
+    //  Use the Fisher-Yates shuffle to ensure a correct and uniform randomization of your array.
+    //  JS TODO: move to utils
+    getRandomProductIds() {
+        const result = [...this.products]; // Create a shallow copy
+        for (let i = result.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [result[i], result[j]] = [result[j], result[i]];
+        }
+        return result.map(p => p.id);
+      }
 }

@@ -20,9 +20,7 @@ class GuassianOrderGenerator extends IOrderGenerator {
             const items = [];
 
             // Create a shuffled copy of product IDs to pick from
-            const availableProducts = [...this.products]
-                .sort(() => Math.random() - 0.5)
-                .map(p => p.id);
+            const availableProducts = this.getRandomProductIds();
 
             for (let j = 0; j < numItems; j++) {
                 const productId = availableProducts[j % availableProducts.length];

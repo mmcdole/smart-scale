@@ -15,6 +15,7 @@
 - Fixed an bug where an item with a quanity >1 wasn't correctly calculating the missing value of an individual product
 - Added a BayesianEstimator
 - Added Bayesian Estimator to UI
+- Fixed bug to improve the uniformity of random sampling from the products array
 
 ### Todo
 - Figure out a better weight to handle individual items w/ weights and groups of items w/ weights (intefaces)
