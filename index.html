@@ -55,6 +55,51 @@
                     </div>
                     <div class="p-4">
                         <div class="mb-4">
+                            <label class="block text-sm font-medium mb-2">Order Generation Method</label>
+                            <div class="flex items-center">
+                              <label for="orderMethodSwitch" class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="orderMethodSwitch" class="sr-only peer">
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full 
+                                            peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] 
+                                            after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border 
+                                            after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                <span id="methodLabel" class="ml-3 text-sm font-medium text-gray-900">DEFAULT</span>
+                              </label>
+                            </div>
+                          </div>
+                          
+                          <details class="mb-4 border border-gray-200 rounded-lg">
+                            <summary class="cursor-pointer text-sm font-medium text-gray-900 p-4">
+                              Order Generator Settings
+                            </summary>
+                            <div class="p-4 bg-gray-50">
+                              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <!-- Unique Items Settings -->
+                                <div>
+                                  <label for="minUniqueItems" class="block text-sm">Min Unique Items</label>
+                                  <input type="number" id="minUniqueItems" value="1" min="1" 
+                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" />
+                                </div>
+                                <div>
+                                  <label for="maxUniqueItems" class="block text-sm">Max Unique Items</label>
+                                  <input type="number" id="maxUniqueItems" value="3" min="1" 
+                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" />
+                                </div>
+                                <!-- Quantity Settings -->
+                                <div>
+                                  <label for="minQuantity" class="block text-sm">Min Quantity per Item</label>
+                                  <input type="number" id="minQuantity" value="1" min="1" 
+                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" />
+                                </div>
+                                <div>
+                                  <label for="maxQuantity" class="block text-sm">Max Quantity per Item</label>
+                                  <input type="number" id="maxQuantity" value="2" min="1" 
+                                         class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" />
+                                </div>
+                              </div>
+                            </div>
+                        </details>
+                        <div class="mb-4">
                             <label class="block text-sm font-medium mb-2">Weight Estimation Algorithm</label>
                             <select id="estimatorSelect" class="w-full border rounded p-2">
                                 <!-- Options will be populated by JavaScript -->

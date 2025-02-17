@@ -16,6 +16,8 @@
 - Added a BayesianEstimator
 - Added Bayesian Estimator to UI
 - Fixed bug to improve the uniformity of random sampling from the products array
+- Added UI configuration for order generator settings
+- Refactored Main UI to better handle state management and resets on configuration changes
 
 ### Todo
 - Figure out a better weight to handle individual items w/ weights and groups of items w/ weights (intefaces)
