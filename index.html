@@ -7,6 +7,7 @@
     <title>QSR Smart Scale Simulator</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/mathjs@12.4.0/lib/browser/math.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Tailwind-specific styles -->
     <style>
         .tooltip-info {
@@ -36,8 +37,8 @@
                     <div class="border-b p-4">
                         <h5 class="font-semibold">Current Order</h5>
                     </div>
-                    <!-- Reduced the height from calc(100vh-200px) to calc(100vh-300px) -->
-                    <div id="currentOrder" class="p-4 h-[calc(100vh-300px)] overflow-y-auto">
+                    <!-- Use a fixed height (e.g. h-64) for a smaller scrollable area -->
+                    <div id="currentOrder" class="p-4 h-96 overflow-y-auto">
                         <p class="text-gray-500">No order being processed</p>
                     </div>
                 </div>
@@ -47,13 +48,49 @@
                     <div class="border-b p-4">
                         <h5 class="font-semibold">Probability</h5>
                     </div>
-                    <div class="p-4">
-                        <!-- Placeholder content -->
-                        <p class="text-gray-500">Placeholder Probability Info</p>
+                    <div class="p-4 space-y-4">
+                        <!-- 1. Graphical Visualization -->
+                        <div>
+                            <h6 class="text-sm font-medium mb-2">Weight Distribution</h6>
+                            <canvas id="probabilityChart" class="w-full h-48 bg-gray-100 rounded"></canvas>
+                        </div>
+
+                        <!-- 2. Spans for Probabilities -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium">Probability Complete</label>
+                                <span id="probabilityComplete"
+                                    class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm bg-gray-100 text-gray-700 p-2">0</span>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium">Probability Missing</label>
+                                <span id="probabilityMissing"
+                                    class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm bg-gray-100 text-gray-700 p-2">0</span>
+                            </div>
+                        </div>
+
+                        <!-- 3. Table for Product Missing Probabilities -->
+                        <div>
+                            <h6 class="text-sm font-medium mb-2">Product Missing Probabilities</h6>
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Product ID
+                                            </th>
+                                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">
+                                                Probability Missing</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="probabilityTableBody" class="bg-white divide-y divide-gray-200">
+                                        <!-- Rows will be dynamically inserted here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
-
             <!-- MIDDLE COLUMN: Training Controls + Statistical Analysis -->
             <div class="space-y-4">
                 <!-- Training Controls -->

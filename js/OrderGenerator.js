@@ -19,7 +19,7 @@ class OrderGenerator extends IOrderGenerator {
             for (let j = 0; j < numItems; j++) {
                 const productId = availableProducts[j % availableProducts.length];
                 const quantity = this.randomInteger(this.minItemQuantity, this.maxItemQuantity) // 1-2 quantity
-                const product = products.find(p => p.id === productId);
+                const product = this.getProducts().find(p => p.id === productId);
                 let totalWeight = 0;
                 for (let k = 0; k < quantity; k++) {
                     // distinct weight for each individual product in the range

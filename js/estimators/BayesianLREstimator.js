@@ -84,7 +84,42 @@ class BayesianLREstimator extends WeightEstimator {
         this.alpha = alpha;
         // Create our internal Bayesian model.
         // (Measurement noise: 100, default prior mean: 200, default prior variance: 10000)
-        this.model = new BayesianLRModel(100, 200, 10000);
+        // Noise value of 100:
+        // This implies that we assume the measurement error has a variance of 100. In layman’s terms, 
+        // that’s like saying the measurement error has a standard deviation of about 10 grams.
+//         this.model = new BayesianLRModel(400, 200, 1000);
+//         95% credible interval for product chicken_burrito: [205.60, 208.61]
+// BayesianLREstimator.js:266 Product cinnamon_twists: estimated weight = 49.68 g, variance = 0.63, confidence = 0.96, seen 236 times
+// BayesianLREstimator.js:270 95% credible interval for product cinnamon_twists: [48.12, 51.23]
+// BayesianLREstimator.js:266 Product seven_layer_burrito: estimated weight = 290.00 g, variance = 0.57, confidence = 0.96, seen 247 times
+// BayesianLREstimator.js:270 95% credible interval for product seven_layer_burrito: [288.52, 291.48]
+// BayesianLREstimator.js:266 Product nachos_bellgrande: estimated weight = 465.10 g, variance = 0.57, confidence = 0.96, seen 261 times
+// BayesianLREstimator.js:270 95% credible interval for product nachos_bellgrande: [463.62, 466.58]
+
+
+        // this.model = new BayesianLRModel(625, 400, 2500);
+        // Product triple_layer_nachos: estimated weight = 195.16 g, variance = 0.88, confidence = 0.96, seen 248 times
+        // BayesianLREstimator.js:279 95% credible interval for product triple_layer_nachos: [193.32, 196.99]
+        // BayesianLREstimator.js:275 Product cheesy_roll_up: estimated weight = 85.78 g, variance = 0.76, confidence = 0.96, seen 277 times
+        // BayesianLREstimator.js:279 95% credible interval for product cheesy_roll_up: [84.07, 87.50]
+        // BayesianLREstimator.js:275 Product chicken_burrito: estimated weight = 210.03 g, variance = 0.90, confidence = 0.96, seen 253 times
+        // BayesianLREstimator.js:279 95% credible interval for product chicken_burrito: [208.17, 211.88]
+        // BayesianLREstimator.js:275 Product cinnamon_twists: estimated weight = 50.54 g, variance = 0.80, confidence = 0.96, seen 270 times
+        // BayesianLREstimator.js:279 95% credible interval for product cinnamon_twists: [48.79, 52.29]
+
+        // GOOD
+        // GOOD
+        //         // this.model = new BayesianLRModel(500, 250, 1200);
+
+
+
+        //  Good at 2000
+        this.model = new BayesianLRModel(1200, 250, 200);
+
+        // this.model = new BayesianLRModel(1500, 250, 200);
+        // noise collapses not sure about other value
+
+
         // Map to track how many times we've seen each productId.
         this.observations = new Map();
     }
@@ -138,8 +173,36 @@ class BayesianLREstimator extends WeightEstimator {
     // Main update entry point: create a sample, update the model, and classify the cart.
     updateEstimates(order, measuredWeight) {
         const sample = this.createSample(order, measuredWeight);
+        console.info(order)
+        console.log("itemTotal_weight: " + order.items.reduce((sum, item) => sum + item.totalWeight, 0))
+        const itemWeightEst = order.items.reduce((total, item) => {
+            if (!item.missing) {
+                return total + item.totalWeight;
+            } else {
+                // one item missing
+                return total + (item.totalWeight - (item.totalWeight / item.quantity));
+            }
+        }, 0);
+        console.log("itemTotal_weight (removed): " + itemWeightEst)
+        console.log("measured_weight:" + measuredWeight)
+        if (order.hasRemovedItem()) {
+            console.log("************************************************************************")
+            console.log("************************************************************************")
+            console.log("This order has a MISSING ITEM!!!!!!")
+            order.items.forEach(item => {
+                if (item.missing) {
+                    console.log("Missing item: " + item.productId);
+                }
+            });
+
+        }
         this.updateModel(sample);
-        this.classifyCart(sample);
+        // this.classifyCart(sample);
+    }
+
+    classifyOrder(order, trueWeight) {
+        return this.classifyCart(this.createSample(order, trueWeight));
+        console.log("----------------------------------------------")
     }
 
     // Returns how many times we've seen a given product.
@@ -243,17 +306,9 @@ class BayesianLREstimator extends WeightEstimator {
         }
     }
 
-    /**
-     * classifyCart(sample)
-     *
-     * Given a new cart sample (with expected products/quantities and observed weight),
-     * compute the predictive distribution under the complete-cart hypothesis (H0)
-     * and under alternative hypotheses (each missing one product). Then, combine
-     * likelihoods with simple priors to compute posterior probabilities.
-     */
     classifyCart(sample) {
         const d = this.model.productIds.length;
-        // Build design vector x_complete as a column vector [d, 1].
+        // Build design vector x_complete as a column vector [d,1].
         let x_complete = math.matrix(math.zeros([d, 1]));
         sample.products.forEach(prod => {
             const idx = this.model.productIds.indexOf(prod.id);
@@ -261,7 +316,7 @@ class BayesianLREstimator extends WeightEstimator {
                 x_complete.subset(math.index(idx, 0), prod.quantity);
             }
         });
-        // Compute predicted total weight under H0:
+        // Compute predicted total weight under H0 (complete cart).
         const predictedMat = math.multiply(math.transpose(x_complete), this.model.betaMean);
         const predicted = predictedMat.subset(math.index(0, 0));
 
@@ -271,25 +326,38 @@ class BayesianLREstimator extends WeightEstimator {
             x_complete
         );
         const varPredict = varPredictMat.subset(math.index(0, 0)) + this.model.measurementNoise;
-
+        console.log("Predictive Variance:", varPredict.toFixed(2));
         // Likelihood for H0 (complete cart).
         const likelihood_H0 = this.normalPDF(sample.actualWeight, predicted, varPredict);
+        console.log(`Likelihood for complete cart (H0): ${likelihood_H0.toExponential(4)}`);
 
         // For each product in the sample, compute the likelihood if that product were missing.
-        let likelihoodsMissing = {}; // productId -> likelihood.
+        let likelihoodsMissing = {};       // productId -> likelihood.
+        let predictedMissingWeights = {};  // productId -> predicted weight if that product is missing.
         sample.products.forEach(prod => {
             let x_missing = math.clone(x_complete);
             const idx = this.model.productIds.indexOf(prod.id);
             if (idx >= 0) {
-                x_missing.subset(math.index(idx, 0), 0); // simulate missing product.
+                // Adjust quantity: if quantity > 1, simulate missing one unit; else, simulate missing all.
+                const currentQty = prod.quantity;
+                const newQty = currentQty > 1 ? currentQty - 1 : 0;
+                x_missing.subset(math.index(idx, 0), newQty);
                 const predictedMissingMat = math.multiply(math.transpose(x_missing), this.model.betaMean);
                 const predictedMissing = predictedMissingMat.subset(math.index(0, 0));
+                predictedMissingWeights[prod.id] = predictedMissing;
                 const varMissingMat = math.multiply(
                     math.multiply(math.transpose(x_missing), this.model.betaCov),
                     x_missing
                 );
                 const varMissing = varMissingMat.subset(math.index(0, 0)) + this.model.measurementNoise;
-                likelihoodsMissing[prod.id] = this.normalPDF(sample.actualWeight, predictedMissing, varMissing);
+                const likelihoodMissing = this.normalPDF(sample.actualWeight, predictedMissing, varMissing);
+                likelihoodsMissing[prod.id] = likelihoodMissing;
+                // Log details for each product.
+                console.log(`Product ${prod.id} (missing simulation):`);
+                console.log(`   Quantity: ${currentQty} -> simulated: ${newQty}`);
+                console.log(`   Predicted missing weight: ${predictedMissing.toFixed(2)} g`);
+                console.log(`   Variance if missing: ${varMissing.toFixed(2)}`);
+                console.log(`   Likelihood if missing: ${likelihoodMissing.toExponential(4)}`);
             }
         });
 
@@ -305,31 +373,50 @@ class BayesianLREstimator extends WeightEstimator {
         const totalWeight = weight_H0 + totalMissingWeight;
         const post_H0 = weight_H0 / totalWeight;
 
+        // Log overall classification.
         console.log("=== Classification ===");
-        console.log(`Predicted complete weight: ${predicted.toFixed(2)} g`);
+        console.log(`Expected complete weight: ${predicted.toFixed(2)} g`);
         console.log(`Observed weight: ${sample.actualWeight.toFixed(2)} g`);
-        // console.log(`Probability cart is complete (H0): ${post_H0.toFixed(4)}`);
-        // console.log(`Probability cart is missing at least one item: ${(1 - post_H0).toFixed(4)}`);
+        console.log(`Probability cart is complete (H0): ${post_H0.toFixed(4)}`);
+        console.log(`Probability cart is missing at least one item: ${(1 - post_H0).toFixed(4)}`);
 
-        // JS TODO: // this isn't working correctly
-
-        // Determine most likely missing product.
+        // Compute individual missing probabilities.
         let missingPosteriors = {};
         for (const id in likelihoodsMissing) {
             missingPosteriors[id] = (likelihoodsMissing[id] * prior_missing) / totalWeight;
         }
-        let mostLikelyMissing = null;
-        let maxProb = 0;
-        for (const id in missingPosteriors) {
-            if (missingPosteriors[id] > maxProb) {
-                maxProb = missingPosteriors[id];
-                mostLikelyMissing = id;
-            }
-        }
-        if (mostLikelyMissing) {
-            console.log(`Most likely missing product: ${mostLikelyMissing}`);
-        } else {
+
+        // Set a threshold: if the probability that something is missing is below 5%, report the cart as complete.
+        const missingThreshold = 0.05;
+        let missingArray = [];
+        if ((1 - post_H0) < missingThreshold) {
             console.log("Cart is most likely complete.");
+        } else {
+            // Build an array of missing product information.
+            missingArray = [];
+            for (const id in missingPosteriors) {
+                missingArray.push({
+                    productId: id,
+                    probability: missingPosteriors[id],
+                    predictedMissingWeight: predictedMissingWeights[id]
+                });
+            }
+            // Sort descending by probability.
+            missingArray.sort((a, b) => b.probability - a.probability);
+
+            // Log the most likely missing product (top 1).
+            if (missingArray.length > 0) {
+                console.log(`Most likely missing product: ${missingArray[0].productId}`);
+                console.log(`Expected weight if ${missingArray[0].productId} were missing: ${missingArray[0].predictedMissingWeight.toFixed(2)} g`);
+            }
+            // Also print the top 3 (or fewer) missing products.
+            console.log("Top likely missing products:");
+            const topN = missingArray.slice(0, 3);
+            topN.forEach(item => {
+                console.log(`Product ${item.productId}: probability missing = ${item.probability.toFixed(4)}, expected weight if missing = ${item.predictedMissingWeight.toFixed(2)} g`);
+            });
         }
+
+        return new OrderMeasurement(sample.actualWeight, predicted, varPredict,post_H0, (1 - post_H0), missingArray.slice(0, 3));
     }
 }

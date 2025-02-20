@@ -22,8 +22,20 @@ class Simulator {
         this.weightEstimator.updateEstimates(order, trueWeight);
     }
 
+    classifyOrder(order, trueWeight) {
+        return this.weightEstimator.classifyOrder(order, trueWeight);
+    }
+
     // Gets the current status of a product
     getProductStatus(productId) {
         return this.weightEstimator.itemStatus(new Item(productId));
+    }
+    
+    getGenerator() {
+        return this.generator;
+    }
+
+    getEstimator() {
+        return this.weightEstimator;
     }
 }

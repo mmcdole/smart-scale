@@ -23,6 +23,21 @@ class WeightEstimator {
     getName() {
         throw new Error('Not implemented');
     }
+
+    classifyOrder(order, trueWeight) {
+        throw new Error('Not implemented');
+    }
+}
+
+class OrderMeasurement{
+    constructor(trueWeight, inferredWeight, variance, probComplete, probMissing, missingItems = []) {
+        this.trueWeight = trueWeight;
+        this.inferredWeight = inferredWeight;
+        this.probComplete = probComplete;
+        this.probMissing = probMissing;
+        this.variance = variance;
+        this.missingItems = missingItems;
+    }
 }
 
 // Order and Item interfaces

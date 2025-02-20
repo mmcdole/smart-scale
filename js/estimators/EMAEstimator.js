@@ -42,6 +42,12 @@ class EMAEstimator extends WeightEstimator {
         });
     }
 
+    classifyOrder(order, trueWeight) {
+        // placeholder
+        return new OrderMeasurement(0, 0, 0, 0, 0);
+    }
+
+
     getObservationCount(productId) {
         return this.observations.get(productId) || 0;
     }

@@ -244,39 +244,67 @@ function updateProductTable() {
     console.error('Product table body not found');
     return;
   }
-
+  
+  // Clear the table body
   tableBody.innerHTML = '';
-  // Retrieve products via simulator.getGenerator().getProducts()
+  
+  // Retrieve the current products from the simulator's generator.
   const currentProducts = simulator.getGenerator().getProducts();
+  
   currentProducts.forEach(product => {
-    try {
-      const row = document.createElement('tr');
-      const estimator = simulator.weightEstimator;
-      const estimatedWeight = estimator.inferItemWeight(new Item(product.id));
-      const observations = estimator.getObservationCount(product.id);
-      const status = estimator.getConfidenceStatus(product.id);
-
-      row.className = 'hover:bg-gray-50';
-
-      const statusClasses = {
-        HIGH: 'bg-green-100 text-green-800',
-        MEDIUM: 'bg-yellow-100 text-yellow-800',
-        LEARNING: 'bg-red-100 text-red-800'
-      };
-
-      row.innerHTML = `
-        <td class="px-4 py-2 text-sm">${product.name}</td>
-        <td class="px-4 py-2 text-sm">${product.trueRange[0]}g - ${product.trueRange[1]}g</td>
-        <td class="px-4 py-2 text-sm">${estimatedWeight ? estimatedWeight.toFixed(1) : '0.0'}g</td>
-        <td class="px-4 py-2 text-sm">${observations}</td>
-        <td class="px-4 py-2 text-sm">
-          <span class="px-2 py-1 rounded-full text-xs ${statusClasses[status]}">${status}</span>
-        </td>
-      `;
-      tableBody.appendChild(row);
-    } catch (error) {
-      console.error(`Error updating row for product ${product.name}:`, error);
-    }
+    // Create the main row
+    const row = document.createElement('tr');
+    row.className = 'hover:bg-gray-50 cursor-pointer';
+    
+    const estimator = simulator.weightEstimator;
+    const estimatedWeight = estimator.inferItemWeight(new Item(product.id));
+    const observations = estimator.getObservationCount(product.id);
+    const status = estimator.getConfidenceStatus(product.id);
+    const statusClasses = {
+      HIGH: 'bg-green-100 text-green-800',
+      MEDIUM: 'bg-yellow-100 text-yellow-800',
+      LEARNING: 'bg-red-100 text-red-800'
+    };
+    
+    row.innerHTML = `
+      <td class="px-4 py-2 text-sm">${product.name}</td>
+      <td class="px-4 py-2 text-sm">${product.trueRange[0]}g - ${product.trueRange[1]}g</td>
+      <td class="px-4 py-2 text-sm">${estimatedWeight ? estimatedWeight.toFixed(1) : '0.0'}g</td>
+      <td class="px-4 py-2 text-sm">${observations}</td>
+      <td class="px-4 py-2 text-sm">
+        <span class="px-2 py-1 rounded-full text-xs ${statusClasses[status]}">${status}</span>
+      </td>
+    `;
+    tableBody.appendChild(row);
+    
+    // Create the expandable row (hidden by default)
+    const expRow = document.createElement('tr');
+    expRow.className = 'hidden';
+    const expCell = document.createElement('td');
+    expCell.colSpan = 5;
+    // Each expansion contains a canvas with a unique id
+    expCell.innerHTML = `
+      <div class="p-4">
+        <canvas id="chart_${product.id}" class="w-full h-48 bg-gray-100 rounded"></canvas>
+      </div>
+    `;
+    expRow.appendChild(expCell);
+    tableBody.appendChild(expRow);
+    
+    // Toggle expansion on click of the main row.
+    row.addEventListener('click', () => {
+      if (expRow.classList.contains('hidden')) {
+        expRow.classList.remove('hidden');
+        // Create the product chart.
+        // Here we assume:
+        //   mean = product.meanWeight,
+        //   variance = 25,
+        //   actual value = product.meanWeight + 5.
+        createProductChart(`chart_${product.id}`, product.meanWeight, 25, product.meanWeight + 5);
+      } else {
+        expRow.classList.add('hidden');
+      }
+    });
   });
 }
 
@@ -312,7 +340,10 @@ async function generateOrders(batchSize, incomplete = false) {
       }
     }, 0);
 
-    simulator.processOrder(order, trueWeight);
+    // simulator.processOrder(order, trueWeight);
+    const measurement = simulator.classifyOrder(order, trueWeight);
+    console.log(measurement);
+    updateProbabilityVisualization(measurement.inferredWeight, measurement.variance, measurement.trueWeight, measurement.probComplete, measurement.probMissing, measurement.missingItems);
     updateCurrentOrder(order);
     updateProductTable();
     updateStatistics(order, trueWeight);
@@ -327,6 +358,9 @@ async function generateOrders(batchSize, incomplete = false) {
       const trueWeight = order.items.reduce((total, item) => total + item.totalWeight, 0);
       order.trueWeight = trueWeight;
       simulator.processOrder(order, trueWeight);
+      const measurement = simulator.classifyOrder(order, trueWeight);
+      console.log(measurement);
+      updateProbabilityVisualization(measurement.inferredWeight, measurement.variance, measurement.trueWeight, measurement.probComplete, measurement.probMissing, measurement.missingItems);
       updateCurrentOrder(order);
       updateProductTable();
       updateStatistics(order, trueWeight);
@@ -357,7 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
     !estimatorSelect || !batchSizeInput || !generateCompleteBtn || !generateIncompleteBtn) {
     console.error('Some UI elements not found');
     return;
-  }1
+  } 1
 
   // Initial simulator creation (default product line = Taco Bell)
   initializeSimulator();
@@ -412,4 +446,192 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log(`Switched product line to ${this.value === 'kfc' ? 'KFC' : 'Taco Bell'}`);
     initializeSimulator();
   });
+
+  // updateProbabilityVisualization(150, 25, 160);
 });
+
+function updateProbabilityVisualization(mean, variance, actualValue, probabilityComplete, probabilityMissing, productMissingData) {
+  // Calculate sigma and set up x range for the distribution curve.
+  const sigma = Math.sqrt(variance);
+  const xMin = mean - 4 * sigma;
+  const xMax = mean + 4 * sigma;
+  const numPoints = 100;
+  const step = (xMax - xMin) / numPoints;
+  const dataPoints = [];
+  let maxY = 0;
+
+
+  // Generate data points for the normal distribution.
+  for (let x = xMin; x <= xMax; x += step) {
+    const y = (1 / (Math.sqrt(2 * Math.PI * variance))) * Math.exp(-Math.pow(x - mean, 2) / (2 * variance));
+    console.log(x, y);
+    if (isNaN(x) || isNaN(y)) {
+      return;
+    }
+
+    dataPoints.push({ x, y });
+    if (y > maxY) {
+      maxY = y;
+    }
+  }
+
+  // Data for the vertical line representing the actual (measured) value.
+  const verticalLineData = [
+    { x: actualValue, y: 0 },
+    { x: actualValue, y: maxY }
+  ];
+
+  // Create the chart.
+  const ctx = document.getElementById('probabilityChart').getContext('2d');
+  // Destroy any existing chart on this canvas.
+  if (ctx.chart) {
+    ctx.chart.destroy();
+  }
+  ctx.chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: [
+        {
+          label: 'Normal Distribution',
+          data: dataPoints,
+          borderColor: 'green',
+          backgroundColor: 'rgba(128,128,128,0.3)', // grey fill
+          fill: true,
+          pointRadius: 0,
+          borderWidth: 2,
+          tension: 0.1
+        },
+        {
+          label: 'Measured Value',
+          data: verticalLineData,
+          borderColor: 'red',
+          borderDash: [5, 5],
+          fill: false,
+          pointRadius: 0,
+          borderWidth: 2,
+          showLine: true
+        }
+      ]
+    },
+    options: {
+      scales: {
+        x: {
+          type: 'linear',
+          position: 'bottom',
+          title: {
+            display: true,
+            text: 'Weight'
+          }
+        },
+        y: {
+          title: {
+            display: true,
+            text: 'Probability Density'
+          }
+        }
+      },
+      plugins: {
+        legend: {
+          display: false
+        }
+      }
+    }
+  });
+
+  function createProductChart(canvasId, mean, variance, actualValue) {
+  const sigma = Math.sqrt(variance);
+  const xMin = mean - 4 * sigma;
+  const xMax = mean + 4 * sigma;
+  const numPoints = 100;
+  const step = (xMax - xMin) / numPoints;
+  const dataPoints = [];
+  let maxY = 0;
+  
+  // Compute the data points for the normal distribution.
+  for (let x = xMin; x <= xMax; x += step) {
+    const y = (1 / (Math.sqrt(2 * Math.PI * variance))) * Math.exp(-Math.pow(x - mean, 2) / (2 * variance));
+    dataPoints.push({ x, y });
+    if (y > maxY) maxY = y;
+  }
+  
+  // Create a vertical line dataset for the actual value.
+  const verticalLineData = [
+    { x: actualValue, y: 0 },
+    { x: actualValue, y: maxY }
+  ];
+  
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  
+  // If a chart already exists on this canvas, destroy it.
+  if (ctx.chart) {
+    ctx.chart.destroy();
+  }
+  
+  ctx.chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      datasets: [
+        {
+          label: 'Normal Distribution',
+          data: dataPoints,
+          borderColor: 'green',
+          backgroundColor: 'rgba(128,128,128,0.3)', // Grey fill
+          fill: true,
+          pointRadius: 0,
+          borderWidth: 2,
+          tension: 0.1
+        },
+        {
+          label: 'Actual Value',
+          data: verticalLineData,
+          borderColor: 'red',
+          borderDash: [5, 5],
+          fill: false,
+          pointRadius: 0,
+          borderWidth: 2,
+          showLine: true
+        }
+      ]
+    },
+    options: {
+      scales: {
+        x: {
+          type: 'linear',
+          position: 'bottom',
+          title: {
+            display: true,
+            text: 'Weight'
+          }
+        },
+        y: {
+          title: {
+            display: true,
+            text: 'Probability Density'
+          }
+        }
+      },
+      plugins: {
+        legend: {
+          display: false
+        }
+      }
+    }
+  });
+}
+
+  // Update the Probability Complete and Probability Missing spans.
+  document.getElementById('probabilityComplete').textContent = probabilityComplete.toFixed(4);
+  document.getElementById('probabilityMissing').textContent = probabilityMissing.toFixed(4);
+
+  // Update the table for product missing probabilities.
+  const tbody = document.getElementById('probabilityTableBody');
+  tbody.innerHTML = ''; // Clear existing rows
+  productMissingData.forEach(item => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="px-4 py-2 text-xs text-gray-500">${item.productId}</td>
+      <td class="px-4 py-2 text-xs text-gray-500">${item.probability.toFixed(4)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
