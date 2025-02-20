@@ -31,14 +31,20 @@ class Order {
         this.items = items;
         this.timestamp = Date.now();
     }
+
+    hasRemovedItem(){
+        return this.items.some(item => item.missing === true);
+    }
 }
 
 // TODO: Unwind this object from weight calcs
 class Item {
-    constructor(productId, quantity = 1, totalWeight = 0) {
+    constructor(productId, quantity = 1, totalWeight = 0, hasMissingQty = false) {
         this.productId = productId;
         this.quantity = quantity;
+        //  these are both for training
         this.totalWeight = totalWeight;
+        this.missing = hasMissingQty;
     }
 }
 
@@ -84,6 +90,10 @@ class IOrderGenerator {
     }
 
 
+    getProducts() {
+        return this.products;
+    }
+
     //  Use the Fisher-Yates shuffle to ensure a correct and uniform randomization of your array.
     //  JS TODO: move to utils
     getRandomProductIds() {
@@ -94,4 +104,27 @@ class IOrderGenerator {
         }
         return result.map(p => p.id);
       }
+}
+
+// Product class definition
+class Product {
+    constructor(id, name, trueRange, meanWeight) {
+        this.id = id;
+        this.name = name;
+        //  represents 1std deviation
+        //  maybe make this 2? we need some sample data
+        this.trueRange = trueRange;
+        this.meanWeight = meanWeight;
+    }
+}
+
+// Product Generator Interface
+class ProductGenerator {
+    getProducts() {
+        throw new Error('Not implemented');
+    }
+
+    getProductById(id) {
+        throw new Error('Not implemented');
+    }
 }
