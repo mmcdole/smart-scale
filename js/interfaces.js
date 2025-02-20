@@ -27,6 +27,10 @@ class WeightEstimator {
     classifyOrder(order, trueWeight) {
         throw new Error('Not implemented');
     }
+
+    getItemStats(productId){
+        throw new Error('Not implemented');
+    }
 }
 
 class OrderMeasurement{

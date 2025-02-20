@@ -244,20 +244,21 @@ function updateProductTable() {
     console.error('Product table body not found');
     return;
   }
-  
+
   // Clear the table body
   tableBody.innerHTML = '';
-  
+
   // Retrieve the current products from the simulator's generator.
   const currentProducts = simulator.getGenerator().getProducts();
-  
+
   currentProducts.forEach(product => {
     // Create the main row
     const row = document.createElement('tr');
     row.className = 'hover:bg-gray-50 cursor-pointer';
-    
+
     const estimator = simulator.weightEstimator;
     const estimatedWeight = estimator.inferItemWeight(new Item(product.id));
+    const stats = estimator.getItemStats(product.id);
     const observations = estimator.getObservationCount(product.id);
     const status = estimator.getConfidenceStatus(product.id);
     const statusClasses = {
@@ -265,7 +266,7 @@ function updateProductTable() {
       MEDIUM: 'bg-yellow-100 text-yellow-800',
       LEARNING: 'bg-red-100 text-red-800'
     };
-    
+
     row.innerHTML = `
       <td class="px-4 py-2 text-sm">${product.name}</td>
       <td class="px-4 py-2 text-sm">${product.trueRange[0]}g - ${product.trueRange[1]}g</td>
@@ -276,7 +277,7 @@ function updateProductTable() {
       </td>
     `;
     tableBody.appendChild(row);
-    
+
     // Create the expandable row (hidden by default)
     const expRow = document.createElement('tr');
     expRow.className = 'hidden';
@@ -290,7 +291,7 @@ function updateProductTable() {
     `;
     expRow.appendChild(expCell);
     tableBody.appendChild(expRow);
-    
+
     // Toggle expansion on click of the main row.
     row.addEventListener('click', () => {
       if (expRow.classList.contains('hidden')) {
@@ -300,14 +301,13 @@ function updateProductTable() {
         //   mean = product.meanWeight,
         //   variance = 25,
         //   actual value = product.meanWeight + 5.
-        createProductChart(`chart_${product.id}`, product.meanWeight, 25, product.meanWeight + 5);
+        createProductChart(`chart_${product.id}`, stats.mean, stats.variance, product.meanWeight);
       } else {
         expRow.classList.add('hidden');
       }
     });
   });
 }
-
 // ====================
 // Statistics Display
 // ====================
@@ -464,7 +464,7 @@ function updateProbabilityVisualization(mean, variance, actualValue, probability
   // Generate data points for the normal distribution.
   for (let x = xMin; x <= xMax; x += step) {
     const y = (1 / (Math.sqrt(2 * Math.PI * variance))) * Math.exp(-Math.pow(x - mean, 2) / (2 * variance));
-    console.log(x, y);
+
     if (isNaN(x) || isNaN(y)) {
       return;
     }
@@ -538,35 +538,60 @@ function updateProbabilityVisualization(mean, variance, actualValue, probability
     }
   });
 
-  function createProductChart(canvasId, mean, variance, actualValue) {
-  const sigma = Math.sqrt(variance);
+  // Update the Probability Complete and Probability Missing spans.
+  document.getElementById('probabilityComplete').textContent = probabilityComplete.toFixed(4);
+  document.getElementById('probabilityMissing').textContent = probabilityMissing.toFixed(4);
+
+  // Update the table for product missing probabilities.
+  const tbody = document.getElementById('probabilityTableBody');
+  tbody.innerHTML = ''; // Clear existing rows
+  productMissingData.forEach(item => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="px-4 py-2 text-xs text-gray-500">${item.productId}</td>
+      <td class="px-4 py-2 text-xs text-gray-500">${item.probability.toFixed(4)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+}
+
+function createProductChart(canvasId, mean, variance, actualValue) {
+  const sigma = Math.sqrt(variance) + Math.sqrt(variance);
   const xMin = mean - 4 * sigma;
   const xMax = mean + 4 * sigma;
   const numPoints = 100;
   const step = (xMax - xMin) / numPoints;
   const dataPoints = [];
   let maxY = 0;
-  
+
   // Compute the data points for the normal distribution.
   for (let x = xMin; x <= xMax; x += step) {
     const y = (1 / (Math.sqrt(2 * Math.PI * variance))) * Math.exp(-Math.pow(x - mean, 2) / (2 * variance));
+
+        
+    if (isNaN(x) || isNaN(y)) {
+      return;
+    }
+
+
     dataPoints.push({ x, y });
     if (y > maxY) maxY = y;
   }
-  
+
   // Create a vertical line dataset for the actual value.
   const verticalLineData = [
     { x: actualValue, y: 0 },
     { x: actualValue, y: maxY }
   ];
-  
+
   const ctx = document.getElementById(canvasId).getContext('2d');
-  
+
   // If a chart already exists on this canvas, destroy it.
   if (ctx.chart) {
     ctx.chart.destroy();
   }
-  
+
   ctx.chart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -616,22 +641,5 @@ function updateProbabilityVisualization(mean, variance, actualValue, probability
         }
       }
     }
-  });
-}
-
-  // Update the Probability Complete and Probability Missing spans.
-  document.getElementById('probabilityComplete').textContent = probabilityComplete.toFixed(4);
-  document.getElementById('probabilityMissing').textContent = probabilityMissing.toFixed(4);
-
-  // Update the table for product missing probabilities.
-  const tbody = document.getElementById('probabilityTableBody');
-  tbody.innerHTML = ''; // Clear existing rows
-  productMissingData.forEach(item => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td class="px-4 py-2 text-xs text-gray-500">${item.productId}</td>
-      <td class="px-4 py-2 text-xs text-gray-500">${item.probability.toFixed(4)}</td>
-    `;
-    tbody.appendChild(tr);
   });
 }

@@ -24,6 +24,7 @@
 - Added UI configuration for order generator settings
 - Refactored Main UI to better handle state management and resets on configuration changes-
 - Added selectors for Taco Bell and KFC products to the UI. Added appropriate generators
+- Separated order processing from Classification
 - Added visuals for weight actuals vs inference
 - Added visuals for probability complete and missing
 - Added visuals for predicted products missing 
@@ -31,7 +32,6 @@
 ### Todo
 - Figure out a better weight to handle individual items w/ weights and groups of items w/ weights (intefaces)
 - Figure out a better way to quantify the confidence during training, per prod, per sample
-- Separate out update model from classify cart
 - It thinks the range for product weights can go negative in early training for missing samples
 - Refactor the order object, include expectedItems, actualItems
 - Create an OrderGenerator mirroring production data (count num items, distribution of items, items per order, modifiers per item)

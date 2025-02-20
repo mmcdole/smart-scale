@@ -51,6 +51,10 @@ class KalmanEstimator extends WeightEstimator {
         });
     }
 
+    getItemStats(productId){
+        return { mean: 0.0, variance: 0.0};
+    }
+
     classifyOrder(order, trueWeight) {
         // placeholder
         return new OrderMeasurement(0, 0, 0, 0, 0);

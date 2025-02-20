@@ -114,7 +114,7 @@ class BayesianLREstimator extends WeightEstimator {
 
 
         //  Good at 2000
-        this.model = new BayesianLRModel(1200, 250, 200);
+        this.model = new BayesianLRModel(2000, 250, 1000);
 
         // this.model = new BayesianLRModel(1500, 250, 200);
         // noise collapses not sure about other value
@@ -217,6 +217,14 @@ class BayesianLREstimator extends WeightEstimator {
         if (conf > 0.8) return 'HIGH';
         if (conf > 0.5) return 'MEDIUM';
         return 'LEARNING';
+    }
+
+    getItemStats(productId){
+        const idx = this.model.productIds.indexOf(productId);
+        if (idx < 0) return null;
+        const mean = this.model.betaMean.subset(math.index(idx, 0));
+        const variance = this.model.betaCov.subset(math.index(idx, idx));
+        return { mean, variance};
     }
 
     _itemStatus(item) {
