@@ -5,13 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart Scale Estimator Evaluation</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Add math.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/9.4.4/math.js"></script>
     <!-- Load dependencies -->
     <script src="../interfaces.js"></script>
+    <script src="../OrderGenerator.js"></script>
+    <script src="../GuassianOrderGenerator.js"></script>
     <script src="../estimators/EMAEstimator.js"></script>
     <script src="../estimators/KalmanEstimator.js"></script>
     <script src="../estimators/BayesianLREstimator.js"></script>
+    <script src="../Simulator.js"></script>
     <script src="../main.js"></script>
+    <script src="eval-orders.js"></script>
+    <script src="convergence-evaluator.js"></script>
     <script src="evaluator.js"></script>
+    <style>
+        .spinner {
+            border: 2px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 2px solid #3b82f6;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body class="bg-gray-100">
     <div class="container mx-auto p-4">
@@ -78,16 +101,56 @@
             button.textContent = 'Running...';
             button.classList.add('opacity-50');
 
+            // Reset all cells to show spinners
+            const cells = document.querySelectorAll('[data-estimator][data-metric]');
+            cells.forEach(cell => {
+                cell.innerHTML = '<div class="spinner"></div>';
+            });
+
             try {
-                // Run the evaluations
-                const results = await runAllEvaluations();
-                displayResults(results);
+                // Get products from main.js
+                if (typeof window.getProducts !== 'function') {
+                    throw new Error('Products not available. Make sure main.js is loaded correctly.');
+                }
+                const products = window.getProducts();
+                
+                if (!products || !Array.isArray(products)) {
+                    throw new Error('Invalid products data received');
+                }
+
+                // Run evaluations one by one
+                const results = [];
+                
+                // EMA Evaluation
+                const emaResults = await evaluateEstimator('EMAEstimator', products);
+                results.push(emaResults);
+                updateEstimatorResults('ema', emaResults);
+
+                // Kalman Evaluation
+                const kalmanResults = await evaluateEstimator('KalmanEstimator', products);
+                results.push(kalmanResults);
+                updateEstimatorResults('kalman', kalmanResults);
+
+                // Bayesian Evaluation
+                const bayesianResults = await evaluateEstimator('BayesianLREstimator', products);
+                results.push(bayesianResults);
+                updateEstimatorResults('bayesian', bayesianResults);
+
+                // Save results to localStorage
+                localStorage.setItem('evalResults', JSON.stringify(results));
+                
+                // Update detailed results
+                displayDetailedResults(results);
                 
                 button.textContent = 'Run Evals';
                 button.disabled = false;
                 button.classList.remove('opacity-50');
             } catch (error) {
                 console.error('Error running evaluations:', error);
+                cells.forEach(cell => {
+                    cell.textContent = 'Error';
+                    cell.classList.add('text-red-500');
+                });
                 button.textContent = 'Error';
                 button.classList.add('bg-red-500');
                 setTimeout(() => {
@@ -99,20 +162,23 @@
             }
         }
 
-        function displayResults(results) {
-            // Update convergence scores in the matrix
-            results.forEach(result => {
-                const estimatorType = result.estimatorName.toLowerCase().includes('ema') ? 'ema' : 
-                                    result.estimatorName.toLowerCase().includes('kalman') ? 'kalman' : 'bayesian';
-                
-                // Update convergence score
-                const convergenceCell = document.querySelector(`[data-estimator="${estimatorType}"][data-metric="convergence"]`);
-                if (convergenceCell) {
-                    convergenceCell.textContent = result.convergenceScore === Infinity ? 'Did not converge' : result.convergenceScore.toFixed(2);
-                }
-            });
-            
-            // Update detailed results
+        function updateEstimatorResults(estimatorType, result) {
+            // Update convergence score
+            const convergenceCell = document.querySelector(`[data-estimator="${estimatorType}"][data-metric="convergence"]`);
+            if (convergenceCell) {
+                convergenceCell.textContent = result.convergenceScore === Infinity ? 
+                    'Did not converge' : 
+                    result.convergenceScore.toFixed(2);
+            }
+
+            // Update outlier score (when implemented)
+            const outlierCell = document.querySelector(`[data-estimator="${estimatorType}"][data-metric="outlier"]`);
+            if (outlierCell) {
+                outlierCell.textContent = 'Coming soon';
+            }
+        }
+
+        function displayDetailedResults(results) {
             const detailedDiv = document.getElementById('detailedResults');
             detailedDiv.innerHTML = results.map(result => `
                 <div class="mb-6">
@@ -122,8 +188,8 @@
                             <h7 class="font-medium text-sm mb-2 block">Convergence Details</h7>
                             <div class="space-y-1">
                                 <div class="text-sm">Score: ${result.convergenceScore === Infinity ? 'Did not converge' : result.convergenceScore.toFixed(2)}</div>
-                                <div class="text-sm">Orders Processed: ${result.ordersProcessed}</div>
-                                <div class="text-sm">Products Converged: ${result.convergedProducts}</div>
+                                <div class="text-sm">Orders Processed: ${result.ordersProcessed}${result.maxOrdersReached ? ' (max orders reached)' : ''}</div>
+                                <div class="text-sm">Products Converged: ${result.convergedProducts} of ${Object.keys(result.convergenceOrders).length}</div>
                             </div>
                             <div class="mt-4 space-y-1">
                                 <div class="text-sm font-medium">Convergence by Product:</div>
@@ -141,14 +207,6 @@
                 </div>
             `).join('');
         }
-
-        // Try to load previous results from localStorage
-        document.addEventListener('DOMContentLoaded', () => {
-            const savedResults = localStorage.getItem('evalResults');
-            if (savedResults) {
-                displayResults(JSON.parse(savedResults));
-            }
-        });
     </script>
 </body>
 </html>

@@ -1,101 +1,69 @@
-const fs = require('fs');
+class ConvergenceEvaluator {
+    async evaluate(estimator, orders, products, options = {}) {
+        const convergenceOrders = {};
+        products.forEach(product => {
+            convergenceOrders[product.id] = null;
+        });
 
-/**
- * Loads orders from a JSON file.
- * @param {string} filePath - Path to the orders JSON file.
- * @returns {Array} Array of orders.
- */
-function loadOrdersFromFile(filePath) {
-  try {
-    const data = fs.readFileSync(filePath, 'utf8');
-    return JSON.parse(data);
-  } catch (err) {
-    console.error("Error reading orders file:", err);
-    return [];
-  }
-}
-
-/**
- * Evaluates multiple estimators and returns their convergence metrics
- * @param {Array} estimators - Array of estimator instances
- * @param {Array} orders - Array of pre-generated orders
- * @param {Array} products - Array of product definitions
- * @param {Object} options - Evaluation options
- * @returns {Array} Array of evaluation results for each estimator
- */
-function evaluateEstimators(estimators, orders, products, options = {}) {
-  const results = [];
-  
-  for (const estimator of estimators) {
-    const result = evaluateEstimatorConvergence(estimator, orders, products, options);
-    results.push(result);
-  }
-  
-  return results;
-}
-
-/**
- * Evaluates a single estimator's convergence speed
- * @param {WeightEstimator} estimator - An estimator instance
- * @param {Array} orders - Array of pre-generated orders
- * @param {Array} products - Array of product definitions
- * @param {Object} options - Optional parameters
- * @returns {Object} Evaluation metrics for the estimator
- */
-function evaluateEstimatorConvergence(estimator, orders, products, options = {}) {
-  const errorThreshold = options.errorThreshold || 5;
-  const convergenceOrders = {};
-  products.forEach(product => {
-    convergenceOrders[product.id] = null;
-  });
-
-  let ordersProcessed = 0;
-  
-  // Reset estimator state
-  estimator.reset();
-
-  for (let i = 0; i < orders.length; i++) {
-    const order = orders[i];
-    const measuredWeight = order.items.reduce((sum, item) => sum + item.totalWeight, 0);
-
-    estimator.updateEstimates(order, measuredWeight);
-    ordersProcessed++;
-
-    products.forEach(product => {
-      if (convergenceOrders[product.id] !== null) return;
-
-      const idx = estimator.model.productIds.indexOf(product.id);
-      if (idx >= 0) {
-        const estimatedWeight = estimator.inferItemWeight({ productId: product.id });
-        const error = Math.abs(estimatedWeight - product.meanWeight);
-        if (error < errorThreshold) {
-          convergenceOrders[product.id] = ordersProcessed;
+        const convergenceThreshold = options.errorThreshold || 0.05; // 5% error threshold
+        let ordersProcessed = 0;
+        
+        // Reset estimator state if reset method exists
+        if (typeof estimator.reset === 'function') {
+            estimator.reset();
         }
-      }
-    });
 
-    const allConverged = products.every(product => convergenceOrders[product.id] !== null);
-    if (allConverged) break;
-  }
+        // Process each order
+        for (const order of orders) {
+            ordersProcessed++;
+            
+            // Process the order
+            const measuredWeight = order.items.reduce((sum, item) => sum + item.totalWeight, 0);
+            estimator.updateEstimates(order, measuredWeight);
 
-  // Calculate convergence score (lower is better)
-  const convergedProducts = products.filter(p => convergenceOrders[p.id] !== null).length;
-  const avgConvergenceOrder = Object.values(convergenceOrders)
-    .filter(v => v !== null)
-    .reduce((sum, v) => sum + v, 0) / convergedProducts;
+            // Check convergence for each product
+            products.forEach(product => {
+                if (convergenceOrders[product.id] !== null) return;
 
-  return {
-    estimatorName: estimator.getName(),
-    ordersProcessed,
-    convergenceOrders,
-    convergedProducts,
-    avgConvergenceOrder,
-    score: avgConvergenceOrder // Lower score is better
-  };
+                const estimatedWeight = estimator.inferItemWeight({ productId: product.id });
+                const trueWeight = (product.trueRange[0] + product.trueRange[1]) / 2;
+                const error = Math.abs(estimatedWeight - trueWeight) / trueWeight;
+
+                if (error <= convergenceThreshold) {
+                    convergenceOrders[product.id] = ordersProcessed;
+                }
+            });
+
+            // Check if all products have converged
+            if (Object.values(convergenceOrders).every(orders => orders !== null)) {
+                break;
+            }
+
+            // Add a small delay every 100 orders to prevent browser freezing
+            if (ordersProcessed % 100 === 0) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+                console.log(`Processed ${ordersProcessed} orders...`);
+            }
+        }
+
+        // Calculate convergence score
+        const convergedProducts = Object.values(convergenceOrders).filter(orders => orders !== null).length;
+        const avgConvergenceOrder = convergedProducts === 0 ? Infinity :
+            Object.values(convergenceOrders)
+                .filter(orders => orders !== null)
+                .reduce((sum, orders) => sum + orders, 0) / convergedProducts;
+
+        return {
+            type: 'convergence',
+            estimatorName: estimator.getName(),
+            convergenceScore: avgConvergenceOrder,
+            ordersProcessed,
+            convergedProducts,
+            convergenceOrders,
+            maxOrdersReached: ordersProcessed >= orders.length
+        };
+    }
 }
 
-module.exports = {
-  loadOrdersFromFile,
-  evaluateEstimators,
-  evaluateEstimatorConvergence
-};
+// Export for use in evaluator.js
+window.convergenceEvaluator = new ConvergenceEvaluator();

@@ -87,6 +87,10 @@ class BayesianLREstimator extends WeightEstimator {
         this.model = new BayesianLRModel(100, 200, 10000);
         // Map to track how many times we've seen each productId.
         this.observations = new Map();
+        // Initialize prior parameters for new product
+        this.priors = {};
+        // Initialize state for the product
+        this.state = {};
     }
 
     getName() {
@@ -331,5 +335,21 @@ class BayesianLREstimator extends WeightEstimator {
         } else {
             console.log("Cart is most likely complete.");
         }
+    }
+
+    addProduct(productId) {
+        // Initialize prior parameters for new product
+        this.priors[productId] = {
+            // Use Math instead of math
+            mu: Math.random() * 200 + 100, // Random initial mean between 100-300g
+            sigma: 50,  // Initial standard deviation
+            beta: 0.1   // Initial learning rate
+        };
+        
+        // Initialize state for the product
+        this.state[productId] = {
+            observations: [],
+            lastEstimate: this.priors[productId].mu
+        };
     }
 }

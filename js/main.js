@@ -368,3 +368,8 @@ document.addEventListener('DOMContentLoaded', () => {
     updateProductTable();
     updateCurrentOrder(null);
 });
+
+// Add this function to expose products
+window.getProducts = function() {
+    return products; // Use the existing products array instead of hardcoded values
+};

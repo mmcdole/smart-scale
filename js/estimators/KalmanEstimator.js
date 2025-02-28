@@ -1,8 +1,8 @@
 class KalmanEstimator extends WeightEstimator {
-    constructor(processNoise = 0.001, measurementNoise = 0.1) {
+    constructor(processNoise = 25, measurementNoise = 4) {
         super();
-        this.processNoise = processNoise;
-        this.measurementNoise = measurementNoise;
+        this.processNoise = processNoise;     // variance in g² (5g std dev squared)
+        this.measurementNoise = measurementNoise;  // variance in g² (2g accuracy squared)
         this.estimates = new Map(); // productId -> estimated weight
         this.uncertainties = new Map(); // productId -> uncertainty
         this.observations = new Map(); // productId -> number of observations
